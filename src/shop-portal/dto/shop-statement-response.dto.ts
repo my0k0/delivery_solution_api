@@ -8,7 +8,6 @@ export class ShopStatementResponseDto {
   @ApiProperty() receivedCount!: number;
   @ApiProperty() outForDeliveryCount!: number;
   @ApiProperty() deliveredCount!: number;
-  @ApiProperty() returnedCount!: number;
   @ApiProperty() cancelledCount!: number;
   @ApiProperty() priceTotal!: string;
   @ApiProperty() feeTotal!: string;

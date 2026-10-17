@@ -18,7 +18,7 @@ export class OrderReportRowDto {
   @ApiPropertyOptional({ nullable: true }) deliveryAddress!: string | null;
   @ApiPropertyOptional({ nullable: true }) townshipId!: string | null;
   @ApiPropertyOptional({ nullable: true }) townshipName!: string | null;
-  @ApiProperty({ enum: ['PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'DELIVERED', 'RETURNED', 'CANCELLED'] }) status!: OrderStatus;
+  @ApiProperty({ enum: ['PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'DELIVERED', 'CANCELLED'] }) status!: OrderStatus;
   @ApiPropertyOptional({ enum: ['RIDER', 'PARTNER'], nullable: true }) assigneeType!: 'RIDER' | 'PARTNER' | null;
   @ApiPropertyOptional({ nullable: true }) assigneeId!: string | null;
   @ApiPropertyOptional({ nullable: true }) assigneeName!: string | null;
@@ -56,7 +56,6 @@ export class ShopStatementResponseDto {
   @ApiProperty() assignedCount!: number;
   @ApiProperty() awaitingApprovalCount!: number;
   @ApiProperty() deliveredCount!: number;
-  @ApiProperty() returnedCount!: number;
   @ApiProperty() cancelledCount!: number;
   @ApiProperty() priceTotal!: string;
   @ApiProperty() feeTotal!: string;
@@ -128,7 +127,7 @@ export class DashboardKpiDto {
 
 export class OrdersPerDayStatusDto {
   @ApiProperty() date!: string;
-  @ApiProperty({ enum: ['PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'DELIVERED', 'RETURNED', 'CANCELLED'] }) status!: OrderStatus;
+  @ApiProperty({ enum: ['PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'DELIVERED', 'CANCELLED'] }) status!: OrderStatus;
   @ApiProperty() orderCount!: number;
 }
 
@@ -150,7 +149,6 @@ export class TownshipSuccessRateDto {
   @ApiProperty() townshipId!: string;
   @ApiProperty() townshipName!: string;
   @ApiProperty() deliveredCount!: number;
-  @ApiProperty() returnedCount!: number;
   @ApiProperty() cancelledCount!: number;
   @ApiProperty({ description: 'Percentage from 0 to 100, to two decimals' }) successRate!: string;
 }

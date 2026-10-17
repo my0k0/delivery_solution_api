@@ -8,14 +8,12 @@ describe('shop portal status and privacy mapping', () => {
     ['AWAITING_APPROVAL', 'OUT_FOR_DELIVERY'],
     ['DELIVERED', 'DELIVERED'],
     ['CANCELLED', 'CANCELLED'],
-    ['RETURNED', 'RETURNED'],
   ] as const)('maps %s to %s', (status, displayStatus) => {
     expect(toShopDisplayStatus(status)).toBe(displayStatus);
   });
 
-  it('derives needsAttention for returned, overdue open, and reason-bearing open orders only', () => {
+  it('derives needsAttention for overdue open and reason-bearing open orders only', () => {
     const cases: Array<[OrderStatus, string | null, boolean, boolean]> = [
-      ['RETURNED', null, false, true],
       ['PENDING', '2026-10-15', false, true],
       ['ASSIGNED', '2026-10-16', true, true],
       ['AWAITING_APPROVAL', null, false, false],

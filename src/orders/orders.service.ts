@@ -495,10 +495,6 @@ export class OrdersService {
     return toOrderResponse(await this.orderOrThrow(id), this.timeZone);
   }
 
-  async returnOrder(id: string, input: OrderReasonDto, actorId: string): Promise<OrderResponseDto> {
-    return this.changeState(id, actorId, 'RETURNED', { reason: input.reason, note: 'Order returned to shop' });
-  }
-
   async approve(id: string, actorId: string): Promise<OrderResponseDto> {
     return this.changeState(id, actorId, 'DELIVERED', { note: 'Delivery approved' });
   }

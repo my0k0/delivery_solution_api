@@ -30,17 +30,10 @@ type OrderTransitionUpdates = Partial<
 >;
 
 const ALLOWED_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
-  PENDING: ['ASSIGNED', 'CANCELLED', 'RETURNED'],
-  ASSIGNED: [
-    'PENDING',
-    'ASSIGNED',
-    'AWAITING_APPROVAL',
-    'CANCELLED',
-    'RETURNED',
-  ],
+  PENDING: ['ASSIGNED', 'CANCELLED'],
+  ASSIGNED: ['PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'CANCELLED'],
   AWAITING_APPROVAL: ['DELIVERED', 'ASSIGNED'],
   DELIVERED: [],
-  RETURNED: [],
   CANCELLED: [],
 };
 

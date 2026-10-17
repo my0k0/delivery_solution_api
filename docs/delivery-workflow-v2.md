@@ -15,10 +15,10 @@ Real voucher patterns: price + fee to collect (47,000 + 3,500 = 50,500); "COD 18
 1. **Shop portal:** shop users log in (`users.shop_id`, one login per shop, one shop per user) and see only their own orders. Filters: date range (default today) with a **date basis selector** (entry date default, or delivered date), status, datetime. Search by customer name, phone, etc. Columns: package price, delivery fee, total, status, delivered datetime, estimated date.
 2. **Delivered datetime** = when the rider taps delivered (not approval time). For partner orders it is the officer's mark-delivered time.
 3. **Approval:** rider marks delivered → status `AWAITING_APPROVAL` → officer approves (`DELIVERED`) or **Send back** (returns to `ASSIGNED`, shop-visible reason + internal note). Approval keys belong to the officer role.
-4. **Cancel** = order is dead (`CANCELLED`); anyone with `orders.cancel` (order-create role) can cancel. Send back = approval rejection.
+4. **Cancel** = order is dead (`CANCELLED`), whether the delivery was called off or the package came back to the shop — one terminal state, no separate returned state. Anyone with `orders.cancel` (order-create role) can cancel. Send back = approval rejection.
 5. **Rider** has only "submit delivered". No reject/fail button.
 6. **Failure/postponement:** only an officer decides, with a reason visible to the shop. Order may be re-assigned to the same rider, another rider, or nobody (goes to `PENDING`).
-7. **Statuses:** `PENDING` (no assignee), `ASSIGNED`, `AWAITING_APPROVAL`, `DELIVERED`, `RETURNED` (officer-only terminal, goods back to shop, reason required, from `PENDING`/`ASSIGNED`), `CANCELLED`. Clearing the assignee returns to `PENDING`. All state changes are kept in history.
+7. **Statuses:** `PENDING` (no assignee), `ASSIGNED`, `AWAITING_APPROVAL`, `DELIVERED`, `CANCELLED`. Clearing the assignee returns to `PENDING`. All state changes are kept in history.
 8. **Editable order:** all fields (township, shop, customer, address, notes, price, delivery fee, assignee including blank, etc.), every edit audited field-by-field.
 9. **No round-robin.** One default rider-or-partner per township; one rider may cover many townships. Order create prefills the township default assignee; manual override allowed.
 10. **Township** has `defaultDeliveryFee` (prefilled, overridable) and `leadTimeDays`.
@@ -53,10 +53,10 @@ Extend `users`: nullable `shopId` FK. New seeded role `SHOP`.
 State machine (`OrderStateService`, hard-coded matrix, exhaustive unit tests):
 
 ```
-PENDING            → ASSIGNED, CANCELLED, RETURNED
-ASSIGNED           → PENDING (clear assignee / postpone), ASSIGNED (re-assign, history row), AWAITING_APPROVAL, CANCELLED, RETURNED
+PENDING            → ASSIGNED, CANCELLED
+ASSIGNED           → PENDING (clear assignee / postpone), ASSIGNED (re-assign, history row), AWAITING_APPROVAL, CANCELLED
 AWAITING_APPROVAL  → DELIVERED (approve), ASSIGNED (send back)
-DELIVERED, RETURNED, CANCELLED → terminal
+DELIVERED, CANCELLED → terminal
 ```
 
 Partner orders: officer marks delivered directly `ASSIGNED → DELIVERED` (acts as approval, sets `deliveredAt`). Partner orders have no way and no commission.
@@ -85,7 +85,7 @@ New/changed keys: `deliveries.approve`, `orders.cancel`, `orders.update_costs`, 
 
 ## 7. APIs
 
-- Office: `POST /orders` (`riderId` set = manual, `null` = pending, omitted = township default; a township without assignee does not block creation), `PATCH /orders/:id` (audited edit; changing township asks the client to confirm before overwriting fee/assignee defaults), `POST /orders/:id/cancel`, `/orders/:id/assign`, `/orders/:id/postpone`, `/orders/:id/return`, `/orders/:id/approve`, `/orders/:id/send-back`, `/orders/:id/mark-delivered` (partner), `GET /orders/:id/audit`, townships/partners CRUD, ways list/move/start/pay-anyway, settings.
+- Office: `POST /orders` (`riderId` set = manual, `null` = pending, omitted = township default; a township without assignee does not block creation), `PATCH /orders/:id` (audited edit; changing township asks the client to confirm before overwriting fee/assignee defaults), `POST /orders/:id/cancel`, `/orders/:id/assign`, `/orders/:id/postpone`, `/orders/:id/approve`, `/orders/:id/send-back`, `/orders/:id/mark-delivered` (partner), `GET /orders/:id/audit`, townships/partners CRUD, ways list/move/start/pay-anyway, settings.
 - Rider: board of own assigned orders (computed COD, 0 for fully prepaid), `POST /riders/me/orders/:id/delivered`. No fee/margin/partner/shop finance fields.
 - Shop: `GET /shop/orders`, `GET /shop/orders/:id`, `GET /shop/dashboard`, `GET /shop/statement` (+CSV/XLSX export). **Dedicated `ShopOrderResponseDto`**: no rider, partner, cost, internal-note or audit fields; shop-relevant history only; `AWAITING_APPROVAL` is mapped to "Out for delivery" in the DTO builder. Never hide fields conditionally on a shared DTO.
 - Reports (read-only, derived): shop statement, order report (filters: date, shop, township, status, assignee; totals row; CSV), rider collection (per rider per day, expected COD to hand back), rider payout (ways × rate, pending vs earned, override flagged), office dashboard, shop dashboard, rider dashboard.
@@ -93,7 +93,7 @@ New/changed keys: `deliveries.approve`, `orders.cancel`, `orders.update_costs`, 
 ## 8. Phases (stop for review after each)
 
 - **A — Schema, state machine, permissions (API):** remove pickups + delivery attempts, new tables/columns, new matrix + unit tests, permission catalog + seed + SHOP role, `users.shop_id`, `pnpm db:reset`, full gate.
-- **B — Office orders + approval:** order create/edit/audit/cancel/assign/postpone/return/approve/send-back API; frontend order form (township prefill, overwrite prompt), approval queue, audit view, townships/partners screens; `pnpm codegen`.
+- **B — Office orders + approval:** order create/edit/audit/cancel/assign/postpone/approve/send-back API; frontend order form (township prefill, overwrite prompt), approval queue, audit view, townships/partners screens; `pnpm codegen`.
 - **C — Ways + commission:** ways table logic, settings, rider board "submit delivered", pay anyway.
 - **D — Reports + dashboards:** endpoints, CSV/XLSX export, office/rider dashboards (`dataviz` skill before the first chart).
 - **E — Shop portal:** shop endpoints + dedicated DTO, separate frontend route tree/layout, shop dashboard and exports.
@@ -115,7 +115,7 @@ The following paths are under `/api/v1`.
 
 ### Implemented endpoints
 
-- **Office orders:** `GET/POST /orders`; `GET /orders/:id`; `PATCH /orders/:id`; `GET /orders/:id/history`; `GET /orders/:id/audit`; `POST /orders/:id/assign`; `POST /orders/:id/postpone`; `POST /orders/:id/cancel`; `POST /orders/:id/return`; `POST /orders/:id/approve`; `POST /orders/:id/send-back`; `POST /orders/:id/mark-delivered` (partner orders).
+- **Office orders:** `GET/POST /orders`; `GET /orders/:id`; `PATCH /orders/:id`; `GET /orders/:id/history`; `GET /orders/:id/audit`; `POST /orders/:id/assign`; `POST /orders/:id/postpone`; `POST /orders/:id/cancel`; `POST /orders/:id/approve`; `POST /orders/:id/send-back`; `POST /orders/:id/mark-delivered` (partner orders).
 - **Reference data:** township CRUD at `/townships`; delivery-partner CRUD at `/delivery-partners` (permission namespace `partners`).
 - **Ways and commission:** `GET/POST /ways`; `GET /ways/:id`; `POST /ways/:id/close`; `POST /ways/:id/move-orders`; `POST /ways/:id/pay-anyway`; `GET/PUT /ways/settings/commission-per-way`.
 - **Rider:** `GET /riders/me/orders`; `POST /riders/me/orders/:id/delivered`; `GET /riders/me/dashboard`.
@@ -128,9 +128,9 @@ Exports accept CSV or XLSX and use the shared spreadsheet formula-injection guar
 
 The shop portal uses dedicated shop response DTOs and derives the shop scope only from the authenticated user's `shopId`. It never returns rider/partner identity, partner cost, internal notes, or audit fields.
 
-Internal order states map to shop display states as follows: `PENDING` → `RECEIVED`; `ASSIGNED` and `AWAITING_APPROVAL` → `OUT_FOR_DELIVERY`; `DELIVERED` → `DELIVERED`; `RETURNED` → `RETURNED`; `CANCELLED` → `CANCELLED`.
+Internal order states map to shop display states as follows: `PENDING` → `RECEIVED`; `ASSIGNED` and `AWAITING_APPROVAL` → `OUT_FOR_DELIVERY`; `DELIVERED` → `DELIVERED`; `CANCELLED` → `CANCELLED`.
 
-An order needs attention if it is `RETURNED`, or if it is still open (`PENDING`, `ASSIGNED`, or `AWAITING_APPROVAL`) and either its estimated delivery date is before today in `APP_TIMEZONE` or the latest postponement/send-back history entry has a non-empty reason. Closed delivered/cancelled orders do not receive the open-order attention flag.
+An order needs attention if it is still open (`PENDING`, `ASSIGNED`, or `AWAITING_APPROVAL`) and either its estimated delivery date is before today in `APP_TIMEZONE` or the latest postponement/send-back history entry has a non-empty reason. Closed delivered/cancelled orders do not receive the open-order attention flag.
 
 ### Settings and report definitions
 
@@ -138,7 +138,7 @@ The commission setting is `GET/PUT /api/v1/ways/settings/commission-per-way`, ba
 
 - **Date basis:** office order reports, shop statements, and shop portal date filters default to `ENTRY` (`orders.createdAt`); `DELIVERED` uses `orders.deliveredAt`. Date filters/grouping in these reporting paths use `APP_TIMEZONE`. Shop filters default to the current local date. Rider payout is grouped by `ways.wayDate`.
 - **Shop received count:** an internal `PENDING` order is displayed as `RECEIVED`. `ASSIGNED` and `AWAITING_APPROVAL` are displayed as `OUT_FOR_DELIVERY`.
-- **COD collected:** only `DELIVERED` orders count as collected. **COD expected:** only open `PENDING`, `ASSIGNED`, and `AWAITING_APPROVAL` orders count as expected. COD/net-owed projections and office/shop statement payable totals exclude returned/cancelled orders; shop order-list package-price, delivery-fee, and combined totals exclude `RETURNED` and `CANCELLED` orders. COD and net owed are calculated from package price, delivery fee, and the two payment-to-shop flags.
+- **COD collected:** only `DELIVERED` orders count as collected. **COD expected:** only open `PENDING`, `ASSIGNED`, and `AWAITING_APPROVAL` orders count as expected. COD/net-owed projections and office/shop statement payable totals exclude cancelled orders; shop order-list package-price, delivery-fee, and combined totals exclude `CANCELLED` orders. COD and net owed are calculated from package price, delivery fee, and the two payment-to-shop flags.
 - **Rider collection:** rows are grouped by the local date of `deliveredAt` and include `DELIVERED` and `AWAITING_APPROVAL` orders. Approved-delivery COD is `expectedCodToHandBack`; awaiting-approval COD is reported separately.
 - **Rider payout:** ways are grouped by `wayDate`; a way is `EARNED` when at least one linked order is `DELIVERED`, `PENDING_APPROVAL` when it has orders but none delivered, `PAID_ANYWAY` when overridden, and `EMPTY` when it has no orders. Override amounts are shown separately.
 - **Other implemented reports:** the office dashboard provides order/status and finance series, shop ranking and township success rates; the shop dashboard provides local-date status counts and derived settlement summaries; the rider dashboard provides way counts, earned/pending commission, and today's delivered COD.
@@ -148,7 +148,7 @@ The commission setting is `GET/PUT /api/v1/ways/settings/commission-per-way`, ba
 The implementation is authoritative where it differs from the plan:
 
 1. The delivery-partner CRUD URL is `/delivery-partners`, while its permission module is `partners`.
-2. Default role access is seeded in `scripts/seed.ts`. Role boundaries are grant-based, not enforced by hard-coded role-name checks: for example, postpone/return use `orders.update`, and pay-anyway/settings use `ways.override_commission`. OWNER and ADMIN have those grants by default, but ADMIN can grant catalog permissions to other roles; these operations are not intrinsically restricted to named roles.
+2. Default role access is seeded in `scripts/seed.ts`. Role boundaries are grant-based, not enforced by hard-coded role-name checks: for example, postpone uses `orders.update`, and pay-anyway/settings use `ways.override_commission`. OWNER and ADMIN have those grants by default, but ADMIN can grant catalog permissions to other roles; these operations are not intrinsically restricted to named roles.
 3. The base `orders.codAmount` column remains in the schema, but application code does not read it; COD and net owed are derived from the order fields and flags.
 4. `rider-collection` accepts the shared date-range DTO, including `dateBasis`, but the service always filters/groups by `deliveredAt`. `rider-payout` uses `ways.wayDate` rather than an order date basis.
 5. Some non-report order date handling is not yet aligned with the documented timezone convention: order-list `dateFrom`/`dateTo` bounds are built as UTC timestamps, and the default estimated delivery date starts from the current UTC calendar date. Report and shop portal date boundaries use `APP_TIMEZONE`.

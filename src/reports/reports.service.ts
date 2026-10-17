@@ -92,7 +92,6 @@ export class ShopStatementService {
       assignedCount: sql<number>`count(*) filter (where ${orders.status} = 'ASSIGNED')`,
       awaitingApprovalCount: sql<number>`count(*) filter (where ${orders.status} = 'AWAITING_APPROVAL')`,
       deliveredCount: sql<number>`count(*) filter (where ${orders.status} = 'DELIVERED')`,
-      returnedCount: sql<number>`count(*) filter (where ${orders.status} = 'RETURNED')`,
       cancelledCount: sql<number>`count(*) filter (where ${orders.status} = 'CANCELLED')`,
       priceTotal: sql<string>`coalesce(sum(${payableMoneyExpression(orders.packagePrice)}), 0)::numeric(14, 2)::text`,
       feeTotal: sql<string>`coalesce(sum(${payableMoneyExpression(orders.deliveryFee)}), 0)::numeric(14, 2)::text`,
@@ -114,7 +113,6 @@ export class ShopStatementService {
       assignedCount: Number(totals?.assignedCount ?? 0),
       awaitingApprovalCount: Number(totals?.awaitingApprovalCount ?? 0),
       deliveredCount: Number(totals?.deliveredCount ?? 0),
-      returnedCount: Number(totals?.returnedCount ?? 0),
       cancelledCount: Number(totals?.cancelledCount ?? 0),
       priceTotal: totals?.priceTotal ?? ZERO_MONEY,
       feeTotal: totals?.feeTotal ?? ZERO_MONEY,
@@ -354,20 +352,17 @@ export class ReportsService {
       townshipId: townships.id,
       townshipName: townships.name,
       deliveredCount: sql<number>`count(*) filter (where ${orders.status} = 'DELIVERED')`,
-      returnedCount: sql<number>`count(*) filter (where ${orders.status} = 'RETURNED')`,
       cancelledCount: sql<number>`count(*) filter (where ${orders.status} = 'CANCELLED')`,
     }).from(orders).innerJoin(townships, eq(orders.townshipId, townships.id))
       .where(and(...conditions)).groupBy(townships.id, townships.name).orderBy(asc(townships.name));
     const townshipSuccessRates = townshipRows.map((row) => {
       const deliveredCount = Number(row.deliveredCount);
-      const returnedCount = Number(row.returnedCount);
       const cancelledCount = Number(row.cancelledCount);
-      const denominator = deliveredCount + returnedCount + cancelledCount;
+      const denominator = deliveredCount + cancelledCount;
       return {
         townshipId: row.townshipId,
         townshipName: row.townshipName,
         deliveredCount,
-        returnedCount,
         cancelledCount,
         successRate: denominator === 0 ? '0.00' : ((deliveredCount * 10000) / denominator / 100).toFixed(2),
       };

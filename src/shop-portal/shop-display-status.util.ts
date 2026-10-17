@@ -5,7 +5,6 @@ export const SHOP_DISPLAY_STATUSES = [
   'OUT_FOR_DELIVERY',
   'DELIVERED',
   'CANCELLED',
-  'RETURNED',
 ] as const;
 
 export type ShopDisplayStatus = (typeof SHOP_DISPLAY_STATUSES)[number];
@@ -21,18 +20,19 @@ export function toShopDisplayStatus(status: OrderStatus): ShopDisplayStatus {
       return 'DELIVERED';
     case 'CANCELLED':
       return 'CANCELLED';
-    case 'RETURNED':
-      return 'RETURNED';
   }
 }
 
+/**
+ * A cancelled order is terminal and needs no chase, so attention is only about
+ * open orders: overdue, or sent back / postponed with a reason.
+ */
 export function shopOrderNeedsAttention(
   status: OrderStatus,
   estimatedDeliveryDate: string | null,
   today: string,
   latestPostponeOrSendBackHasReason: boolean,
 ): boolean {
-  if (status === 'RETURNED') return true;
   const isOpen = status === 'PENDING' || status === 'ASSIGNED' || status === 'AWAITING_APPROVAL';
   return isOpen && (
     (estimatedDeliveryDate !== null && estimatedDeliveryDate < today) ||

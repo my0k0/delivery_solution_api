@@ -95,13 +95,13 @@ export class ShopPortalController {
     const statement = await this.shopPortal.getStatementForExport(user, query);
     const headers = [
       'shopName', 'dateFrom', 'dateTo', 'dateBasis', 'receivedCount', 'outForDeliveryCount',
-      'deliveredCount', 'returnedCount', 'cancelledCount', 'priceTotal', 'feeTotal',
+      'deliveredCount', 'cancelledCount', 'priceTotal', 'feeTotal',
       'codCollected', 'codExpected', 'netOwedToShopDelivered', 'pendingNetOwedToShop', 'netOwedToShopTotal',
     ];
     const row: ExportRow = [
       statement.shopName, statement.dateFrom, statement.dateTo, statement.dateBasis,
       statement.receivedCount, statement.outForDeliveryCount, statement.deliveredCount,
-      statement.returnedCount, statement.cancelledCount, statement.priceTotal, statement.feeTotal,
+      statement.cancelledCount, statement.priceTotal, statement.feeTotal,
       statement.codCollected, statement.codExpected, statement.netOwedToShopDelivered,
       statement.pendingNetOwedToShop, statement.netOwedToShopTotal,
     ];

@@ -26,7 +26,7 @@ The live API paths, shop display mapping, report definitions, and implementation
 
 ## Phase 6 — Returns, payment ledger, and reconciliation — BLOCKED
 
-The order has a `RETURNED` state and officers can return orders from `PENDING` or `ASSIGNED`, but there is no separate returns module or return-record workflow. COD and net owed to a shop are currently **derived** from `packagePrice`, `deliveryFee`, `isPackagePaidToShop`, and `isFeePaidToShop`; delivery/approval status determines whether an amount is expected or treated as collected. The legacy `orders.codAmount` column remains in the schema but is not read by application code.
+Orders have a single terminal `CANCELLED` state, reached from `PENDING` or `ASSIGNED` with a required reason; cancelling covers both a called-off delivery and a package that came back to the shop. Whether the goods physically returned is deliberately not tracked, and there is no separate returns module or return-record workflow. COD and net owed to a shop are currently **derived** from `packagePrice`, `deliveryFee`, `isPackagePaidToShop`, and `isFeePaidToShop`; delivery/approval status determines whether an amount is expected or treated as collected. The legacy `orders.codAmount` column remains in the schema but is not read by application code.
 
 There is **no payment ledger, no reconciliation model/process, no shop-prepayment record, and no cash-received record**. Reports are projections of order flags, statuses, ways, and commission settings—not financial transaction history. Phase 6 remains blocked pending approved domain decisions and an ADR; do not infer ledger semantics from these projections.
 

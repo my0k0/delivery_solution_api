@@ -72,12 +72,12 @@ Seeded roles are `OWNER` (system role, all catalog permissions), `ADMIN` (all ca
 
 ## Order workflow
 
-The real order states are `PENDING`, `ASSIGNED`, `AWAITING_APPROVAL`, `DELIVERED`, `RETURNED`, and `CANCELLED`.
+The real order states are `PENDING`, `ASSIGNED`, `AWAITING_APPROVAL`, `DELIVERED`, and `CANCELLED`.
 
 - New orders are assigned from the township default when available, or remain `PENDING`; office staff can assign or reassign a rider or delivery partner.
 - Riders can submit an assigned order as delivered. It becomes `AWAITING_APPROVAL`; an officer approves it to `DELIVERED` or sends it back to `ASSIGNED` with a shop-visible reason and optional internal note.
 - An officer can mark a partner order delivered directly. Partner orders do not belong to a way and do not earn rider commission.
-- Officers can postpone an order (clear assignee to `PENDING`), return it to the shop from `PENDING` or `ASSIGNED` with a required reason, or cancel it with a required reason. Returned and cancelled orders are terminal.
+- Officers can postpone an order (clear assignee to `PENDING`) or cancel it from `PENDING` or `ASSIGNED` with a required reason — cancelling covers both a called-off delivery and a package that came back to the shop. Cancelled orders are terminal.
 - Order edits are audited field-by-field. Cost changes require `orders.update_costs`; cost changes after delivery approval also require `orders.update_after_approval` and a reason.
 
 ### Ways, commission, and order money
@@ -90,7 +90,7 @@ Money is stored as SQL `numeric` and returned as decimal strings. COD to collect
 
 Shop users can see only orders for the shop linked to their authenticated user record. The API uses dedicated shop DTOs and excludes rider/partner identity, internal notes, and audit details. Shops can filter orders by entry or delivered date, local time, display status, attention flag, and customer/tracking search; default date range is today in `APP_TIMEZONE`.
 
-Shop-facing statuses map as follows: `PENDING` → `RECEIVED`; `ASSIGNED` and `AWAITING_APPROVAL` → `OUT_FOR_DELIVERY`; `DELIVERED`, `RETURNED`, and `CANCELLED` retain their names. An order needs attention when it is returned, or when it is still open and its estimate is past or its latest postponement/send-back has a reason.
+Shop-facing statuses map as follows: `PENDING` → `RECEIVED`; `ASSIGNED` and `AWAITING_APPROVAL` → `OUT_FOR_DELIVERY`; `DELIVERED` and `CANCELLED` retain their names. An order needs attention when it is still open and its estimate is past or its latest postponement/send-back has a reason.
 
 ## Reports and exports
 

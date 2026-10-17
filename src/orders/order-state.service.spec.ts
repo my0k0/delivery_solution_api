@@ -6,17 +6,10 @@ import { OrderStateService } from './order-state.service.js';
 import { ORDER_STATUSES, type OrderStatus } from './order.schema.js';
 
 const EXPECTED_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
-  PENDING: ['ASSIGNED', 'CANCELLED', 'RETURNED'],
-  ASSIGNED: [
-    'PENDING',
-    'ASSIGNED',
-    'AWAITING_APPROVAL',
-    'CANCELLED',
-    'RETURNED',
-  ],
+  PENDING: ['ASSIGNED', 'CANCELLED'],
+  ASSIGNED: ['PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'CANCELLED'],
   AWAITING_APPROVAL: ['DELIVERED', 'ASSIGNED'],
   DELIVERED: [],
-  RETURNED: [],
   CANCELLED: [],
 };
 
@@ -59,7 +52,6 @@ describe('OrderStateService', () => {
       'ASSIGNED',
       'AWAITING_APPROVAL',
       'DELIVERED',
-      'RETURNED',
       'CANCELLED',
     ]);
 
@@ -93,7 +85,7 @@ describe('OrderStateService', () => {
     expect(() => service.assertTransition('ASSIGNED', 'DELIVERED')).toThrow(
       BadRequestException,
     );
-    for (const terminalStatus of ['DELIVERED', 'RETURNED', 'CANCELLED'] as const) {
+    for (const terminalStatus of ['DELIVERED', 'CANCELLED'] as const) {
       expect(() =>
         service.assertTransition(terminalStatus, 'PENDING'),
       ).toThrow(BadRequestException);
@@ -160,7 +152,7 @@ describe('OrderStateService', () => {
   });
 
   it('rejects invalid transitions with BadRequestException', () => {
-    for (const terminalStatus of ['DELIVERED', 'RETURNED', 'CANCELLED'] as const) {
+    for (const terminalStatus of ['DELIVERED', 'CANCELLED'] as const) {
       expect(() => service.assertTransition(terminalStatus, 'PENDING')).toThrow(
         BadRequestException,
       );

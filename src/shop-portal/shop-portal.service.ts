@@ -77,8 +77,6 @@ function displayStatusCondition(displayStatus: ShopDisplayStatus): SQL {
       return eq(orders.status, 'DELIVERED');
     case 'CANCELLED':
       return eq(orders.status, 'CANCELLED');
-    case 'RETURNED':
-      return eq(orders.status, 'RETURNED');
   }
 }
 
@@ -96,13 +94,10 @@ function latestPostponeOrSendBackReasonSql(): SQL<string | null> {
 
 function needsAttentionSql(today: string): SQL<boolean> {
   return sql<boolean>`(
-    ${orders.status} = 'RETURNED'
-    or (
-      ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL')
-      and (
-        (${orders.estimatedDeliveryDate} is not null and ${orders.estimatedDeliveryDate} < ${today}::date)
-        or ${latestPostponeOrSendBackReasonSql()} is not null
-      )
+    ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL')
+    and (
+      (${orders.estimatedDeliveryDate} is not null and ${orders.estimatedDeliveryDate} < ${today}::date)
+      or ${latestPostponeOrSendBackReasonSql()} is not null
     )
   )`;
 }
@@ -284,7 +279,6 @@ export class ShopPortalService {
       receivedCount: statement.pendingCount,
       outForDeliveryCount: statement.assignedCount + statement.awaitingApprovalCount,
       deliveredCount: statement.deliveredCount,
-      returnedCount: statement.returnedCount,
       cancelledCount: statement.cancelledCount,
       priceTotal: statement.priceTotal,
       feeTotal: statement.feeTotal,

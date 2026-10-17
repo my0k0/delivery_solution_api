@@ -179,7 +179,7 @@ describe('Phase E shop portal (e2e)', () => {
       { trackingCode: `PORTAL-${run}-PARTNER`, status: 'ASSIGNED', assigneeType: 'PARTNER', riderId: null, partnerId, packagePrice: '95000.00', deliveryFee: '3500.00', isPackagePaidToShop: false, isFeePaidToShop: false, estimatedDeliveryDate: new Date(`${today}T00:00:00.000Z`), deliveredAt: null, createdAt: baseCreatedAt, targetShopId: shopId },
       { trackingCode: `PORTAL-${run}-POSTPONED`, status: 'PENDING', assigneeType: null, riderId: null, partnerId: null, packagePrice: '18000.00', deliveryFee: '3500.00', isPackagePaidToShop: false, isFeePaidToShop: true, estimatedDeliveryDate: new Date(`${today}T00:00:00.000Z`), deliveredAt: null, createdAt: baseCreatedAt, targetShopId: shopId },
       { trackingCode: `PORTAL-${run}-SENDBACK`, status: 'ASSIGNED', assigneeType: 'RIDER', riderId, partnerId: null, packagePrice: '26000.00', deliveryFee: '3500.00', isPackagePaidToShop: false, isFeePaidToShop: false, estimatedDeliveryDate: new Date(`${today}T00:00:00.000Z`), deliveredAt: null, createdAt: baseCreatedAt, targetShopId: shopId },
-      { trackingCode: `PORTAL-${run}-RETURNED`, status: 'RETURNED', assigneeType: null, riderId: null, partnerId: null, packagePrice: '36000.00', deliveryFee: '5000.00', isPackagePaidToShop: true, isFeePaidToShop: false, estimatedDeliveryDate: new Date(`${today}T00:00:00.000Z`), deliveredAt: null, createdAt: baseCreatedAt, targetShopId: shopId },
+      { trackingCode: `PORTAL-${run}-CANCELLED-REFUSED`, status: 'CANCELLED', assigneeType: null, riderId: null, partnerId: null, packagePrice: '36000.00', deliveryFee: '5000.00', isPackagePaidToShop: true, isFeePaidToShop: false, estimatedDeliveryDate: new Date(`${today}T00:00:00.000Z`), deliveredAt: null, createdAt: baseCreatedAt, targetShopId: shopId },
       { trackingCode: `PORTAL-${run}-CANCELLED`, status: 'CANCELLED', assigneeType: null, riderId: null, partnerId: null, packagePrice: '19000.00', deliveryFee: '5000.00', isPackagePaidToShop: false, isFeePaidToShop: false, estimatedDeliveryDate: new Date(`${today}T00:00:00.000Z`), deliveredAt: null, createdAt: baseCreatedAt, targetShopId: shopId },
       { trackingCode: `PORTAL-${run}-DELIVERED`, status: 'DELIVERED', assigneeType: 'RIDER', riderId, partnerId: null, packagePrice: '18000.00', deliveryFee: '3500.00', isPackagePaidToShop: false, isFeePaidToShop: true, estimatedDeliveryDate: new Date(`${today}T00:00:00.000Z`), deliveredAt: baseCreatedAt, createdAt: baseCreatedAt, targetShopId: shopId },
       { trackingCode: `PORTAL-${run}-OVERDUE`, status: 'PENDING', assigneeType: null, riderId: null, partnerId: null, packagePrice: '95000.00', deliveryFee: '3500.00', isPackagePaidToShop: false, isFeePaidToShop: false, estimatedDeliveryDate: new Date('2020-01-01T00:00:00.000Z'), deliveredAt: null, createdAt: baseCreatedAt, targetShopId: shopId },
@@ -223,9 +223,9 @@ describe('Phase E shop portal (e2e)', () => {
         { orderId: order.id, fromStatus: 'ASSIGNED' as const, toStatus: 'AWAITING_APPROVAL' as const, changedBy: ownerActor, note: 'Submitted', reason: null, internalNote: null },
         { orderId: order.id, fromStatus: 'AWAITING_APPROVAL' as const, toStatus: 'ASSIGNED' as const, changedBy: ownerActor, note: 'Sent back', reason: 'Please confirm handoff', internalNote: `Leak internal ${run}` },
       ];
-      if (order.trackingCode.endsWith('-RETURNED')) return [
+      if (order.trackingCode.endsWith('-CANCELLED-REFUSED')) return [
         { orderId: order.id, fromStatus: null, toStatus: 'PENDING' as const, changedBy: ownerActor, note: 'Initial record', reason: null, internalNote: null },
-        { orderId: order.id, fromStatus: 'PENDING' as const, toStatus: 'RETURNED' as const, changedBy: ownerActor, note: 'Returned', reason: 'Customer refused package', internalNote: null },
+        { orderId: order.id, fromStatus: 'PENDING' as const, toStatus: 'CANCELLED' as const, changedBy: ownerActor, note: 'Cancelled', reason: 'Customer refused package', internalNote: null },
       ];
       return [{ orderId: order.id, fromStatus: null, toStatus: order.status, changedBy: ownerActor, note: 'Initial record', reason: null, internalNote: null }];
     });
@@ -291,7 +291,7 @@ describe('Phase E shop portal (e2e)', () => {
       .set('Authorization', `Bearer ${shopToken}`).expect(200);
     assertNoLeaks(statement.body);
     expect(statement.body).toMatchObject({
-      receivedCount: 5, outForDeliveryCount: 3, deliveredCount: 1, returnedCount: 1, cancelledCount: 1,
+      receivedCount: 5, outForDeliveryCount: 3, deliveredCount: 1, cancelledCount: 2,
       codCollected: '18000.00', codExpected: '295000.00',
       netOwedToShopDelivered: '14500.00', pendingNetOwedToShop: '277500.00', netOwedToShopTotal: '292000.00',
     });

@@ -266,7 +266,7 @@ const orderDefinitions = [
   },
   {
     trackingCode: 'DEMO-ORD-011',
-    status: 'RETURNED',
+    status: 'CANCELLED',
     shopIndex: 1,
     customerIndex: 0,
     townshipIndex: 0,
@@ -276,11 +276,11 @@ const orderDefinitions = [
     deliveryFee: '3500.00',
     isPackagePaidToShop: false,
     isFeePaidToShop: true,
-    notes: 'Returned to shop after assignment.',
+    notes: 'Cancelled after assignment.',
   },
   {
     trackingCode: 'DEMO-ORD-012',
-    status: 'RETURNED',
+    status: 'CANCELLED',
     shopIndex: 2,
     customerIndex: 1,
     townshipIndex: 2,
@@ -290,7 +290,7 @@ const orderDefinitions = [
     deliveryFee: '5000.00',
     isPackagePaidToShop: true,
     isFeePaidToShop: false,
-    notes: 'Returned to shop before assignment.',
+    notes: 'Cancelled before assignment.',
   },
   {
     trackingCode: 'DEMO-ORD-013',
@@ -356,7 +356,7 @@ const orderDefinitions = [
   },
   {
     trackingCode: 'DEMO-ORD-017',
-    status: 'RETURNED',
+    status: 'CANCELLED',
     shopIndex: 0,
     customerIndex: 6,
     townshipIndex: 2,
@@ -366,7 +366,7 @@ const orderDefinitions = [
     deliveryFee: '5000.00',
     isPackagePaidToShop: true,
     isFeePaidToShop: false,
-    notes: 'Returned shop portal fixture.',
+    notes: 'Cancelled shop portal fixture.',
   },
   {
     trackingCode: 'DEMO-ORD-018',
@@ -530,16 +530,6 @@ function historyForOrder(
           previousAssignee: null,
           newAssignee: null,
         },
-      ];
-    case 'RETURNED':
-      return [
-        initial,
-        transition(
-          initialStatus,
-          'RETURNED',
-          'Order returned to shop',
-          'Demo return',
-        ),
       ];
   }
 }

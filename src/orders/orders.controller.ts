@@ -107,18 +107,6 @@ export class OrdersController {
     return this.ordersService.cancel(id, input, currentUser.id);
   }
 
-  @Post(':id/return')
-  @RequirePermissions('orders.update')
-  @HttpCode(200)
-  @ApiOkResponse({ type: OrderResponseDto })
-  returnOrder(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() input: OrderReasonDto,
-    @CurrentUser() currentUser: AuthenticatedUser,
-  ): Promise<OrderResponseDto> {
-    return this.ordersService.returnOrder(id, input, currentUser.id);
-  }
-
   @Post(':id/approve')
   @RequirePermissions('deliveries.approve')
   @HttpCode(200)
