@@ -1,6 +1,6 @@
 # Delivery Workflow v2 — Approved Requirement Change
 
-**Status:** IMPLEMENTED (phases A–E complete; Phase F documentation).
+**Status:** IMPLEMENTED (phases A–E complete; Phase F documentation updated).
 
 Repos: `delivery_solution_api` (NestJS 12, Drizzle, Postgres 18) and `delivery_solution_frontend` (Vite + React + TS). Follow each repo's `CLAUDE.md`: no `any`, no abbreviations, ESM `.js` import suffixes, kebab-case typed file names, DTOs for all request/response shapes with `@Api*Response({ type })`, one responsibility per dialog/form file on the frontend, `pnpm codegen` for frontend API types (API must be running), **no new test files in the frontend**.
 
@@ -83,6 +83,8 @@ Decimal strings / SQL `numeric`, never JS floats. P = `packagePrice`, F = `deliv
 
 New/changed keys: `deliveries.approve`, `orders.cancel`, `orders.update_costs`, `orders.update_after_approval`, `shop-portal.read`, `shop-reports.export`, `ways.override_commission`; add modules `townships`, `partners`, `ways` as needed; remove `pickups.*`. Riders must still not receive `orders.read`. The SHOP role gets only `shop-portal.read` and `shop-reports.export`. Update OFFICER/RIDER/SHOP seed mappings.
 
+As built, the catalog is **14 modules / 69 keys**. The `returns`, `payments`, and `notifications` modules were later removed entirely, so the catalog no longer reserves keys for unimplemented areas.
+
 ## 7. APIs
 
 - Office: `POST /orders` (`riderId` set = manual, `null` = pending, omitted = township default; a township without assignee does not block creation), `PATCH /orders/:id` (audited edit; changing township asks the client to confirm before overwriting fee/assignee defaults), `POST /orders/:id/cancel`, `/orders/:id/assign`, `/orders/:id/postpone`, `/orders/:id/approve`, `/orders/:id/send-back`, `/orders/:id/mark-delivered` (partner), `GET /orders/:id/audit`, townships/partners CRUD, ways list/move/start/pay-anyway, settings.
@@ -154,3 +156,4 @@ The implementation is authoritative where it differs from the plan:
 5. Some non-report order date handling is not yet aligned with the documented timezone convention: order-list `dateFrom`/`dateTo` bounds are built as UTC timestamps, and the default estimated delivery date starts from the current UTC calendar date. Report and shop portal date boundaries use `APP_TIMEZONE`.
 6. The proposed standalone `/reports/daily`, `/reports/cod-pending`, `/reports/rider-performance`, and `/reports/shop-performance` endpoints are not present. The live report set is the endpoint list above.
 7. Ways also have an `EMPTY` derived state when they contain no orders; the planned state summary listed pending approval, earned, and paid anyway.
+8. `drizzle/0018_merge-cancel-return.sql` is a data-mapping migration. Decision 21 assumed dev data was disposable and that no status mapping would be needed, but `RETURNED` was later folded into the single terminal `CANCELLED` state, so the migration rewrites existing `RETURNED` rows in `orders.status` and in `order_status_history.from_status`/`to_status` before rebuilding the `order_status` enum type. `RETURNED` no longer exists in the enum, the transition matrix, the shop display vocabulary, or the report DTOs; `returnedCount` was removed from the shop statement rather than kept as an always-zero column.

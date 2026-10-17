@@ -8,7 +8,7 @@ Authorization follows `user → role → permission grants`. A user's `role_id` 
 
 ## Fixed permission catalog
 
-`src/common/auth/permission-keys.ts` is the source of truth for the catalog. It defines a literal `PermissionKey` union and **17 modules / 87 permission keys**:
+`src/common/auth/permission-keys.ts` is the source of truth for the catalog. It defines a literal `PermissionKey` union and **14 modules / 69 permission keys**:
 
 | Module | Actions |
 |---|---|
@@ -25,9 +25,6 @@ Authorization follows `user → role → permission grants`. A user's `role_id` 
 | `ways` | `create`, `read`, `update`, `delete`, `export`, `import`, `override_commission` |
 | `shop-portal` | `read` |
 | `shop-reports` | `export` |
-| `returns` | `create`, `read`, `update`, `delete`, `export`, `import` |
-| `payments` | `create`, `read`, `update`, `delete`, `export`, `import` |
-| `notifications` | `create`, `read`, `update`, `delete`, `export`, `import` |
 | `reports` | `read`, `export` |
 
 The seed script synchronizes database catalog rows from this list. `GET /api/v1/permissions` reads the catalog grouped by module. There are no endpoints or permission keys for creating or deleting catalog entries. Adding a key is a code change followed by reseeding; do not treat a role grant as a new permission definition.
@@ -41,14 +38,14 @@ The seed script synchronizes database catalog rows from this list. `GET /api/v1/
 | Role | Seeded effective grants |
 |---|---|
 | `OWNER` | Entire current catalog. System roles short-circuit grant-row lookup, so OWNER has no `role_permissions` rows. |
-| `ADMIN` | All 87 catalog keys. |
+| `ADMIN` | All 69 catalog keys. |
 | `OFFICER` | `orders.create`, `orders.read`, `orders.update`, `orders.cancel`, `orders.update_costs`, `orders.update_after_approval`; `deliveries.read`, `deliveries.update`, `deliveries.approve`; `townships.read/create/update/delete`; `partners.read/create/update/delete`; `ways.create/read/update`; `reports.read`, `reports.export`. |
 | `RIDER` | `deliveries.read`, `deliveries.update`. |
 | `SHOP` | `shop-portal.read`, `shop-reports.export`. |
 
 OWNER receives the current database catalog whenever effective permissions are requested. Other roles receive their `role_permissions` grants. The service caches non-system grants for up to 60 seconds and clears its cache when grants are replaced.
 
-The `delivery-partners` feature module uses the `partners.*` permission namespace. `returns`, `payments`, and `notifications` exist in the fixed permission catalog but do not currently have corresponding feature modules.
+The `delivery-partners` feature module uses the `partners.*` permission namespace.
 
 ## API surface
 

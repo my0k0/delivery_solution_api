@@ -66,7 +66,7 @@ pnpm test:e2e
 
 ## Authentication and permissions
 
-All routes except public routes require a JWT access token from `POST /api/v1/auth/login`. Global guards authenticate the active user and check route permissions. The permission catalog is fixed in `src/common/auth/permission-keys.ts`: **17 modules / 87 keys**. The modules are `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, `returns`, `payments`, `notifications`, and `reports`. Keys are seeded; runtime APIs can read the catalog and replace role grants, but cannot create or delete permission keys.
+All routes except public routes require a JWT access token from `POST /api/v1/auth/login`. Global guards authenticate the active user and check route permissions. The permission catalog is fixed in `src/common/auth/permission-keys.ts`: **14 modules / 69 keys**. The modules are `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, and `reports`. Keys are seeded; runtime APIs can read the catalog and replace role grants, but cannot create or delete permission keys.
 
 Seeded roles are `OWNER` (system role, all catalog permissions), `ADMIN` (all catalog permissions), `OFFICER` (order operations, delivery approval, township/partner/way operations, and reports), `RIDER` (own delivery read/update), and `SHOP` (shop portal read and shop report export). The exact seed grants are in `scripts/seed.ts`.
 
@@ -96,11 +96,11 @@ Shop-facing statuses map as follows: `PENDING` → `RECEIVED`; `ASSIGNED` and `A
 
 Implemented office reports: order report, shop statement, rider collection, rider payout, and office dashboard. The rider dashboard includes way and commission summaries; the shop dashboard and statement are available in the shop portal. Order reports and shop orders/statements support CSV and XLSX exports. Spreadsheet text is passed through the formula-injection guard in `src/reports/report-export.util.ts`.
 
-Date-range reports default to entry date (`createdAt`) unless a delivered-date basis is selected. Rider collection is grouped by local delivered date; rider payout uses the way's local business date. `APP_TIMEZONE` defines report date boundaries. Report amounts are derived from order flags and statuses: delivered orders count toward collected COD; `PENDING`, `ASSIGNED`, and `AWAITING_APPROVAL` count toward expected COD. Returned/cancelled orders do not contribute COD/net-owed projections or office/shop statement payable totals. The shop order-list's raw package-price and fee totals still sum all filtered rows.
+Date-range reports default to entry date (`createdAt`) unless a delivered-date basis is selected. Rider collection is grouped by local delivered date; rider payout uses the way's local business date. `APP_TIMEZONE` defines report date boundaries. Report amounts are derived from order flags and statuses: delivered orders count toward collected COD; `PENDING`, `ASSIGNED`, and `AWAITING_APPROVAL` count toward expected COD. Cancelled orders do not contribute to COD/net-owed projections or office/shop statement payable totals. The shop order-list's raw package-price and fee totals still sum all filtered rows.
 
 ## Architecture
 
-Feature modules registered in `src/app.module.ts`: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners` (permission module `partners`), `ways`, `reports`, and `shop-portal`. Shared infrastructure is under `src/common/` (database, auth, health, utilities); configuration is under `src/config/`. The fixed permission catalog also reserves `returns`, `payments`, and `notifications` keys, but these do not currently have feature modules.
+Feature modules registered in `src/app.module.ts`: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners` (permission module `partners`), `ways`, `reports`, and `shop-portal`. Shared infrastructure is under `src/common/` (database, auth, health, utilities); configuration is under `src/config/`.
 
 OpenAPI at `/api/v1/docs-json` is the canonical API contract.
 

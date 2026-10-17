@@ -62,7 +62,7 @@ E2E requires `docker compose up -d` and writes to the Compose Postgres database.
 
 - `src/app.module.ts` registers global JWT authentication and permission guards. Every route needs a bearer token unless marked `@Public()`.
 - Protected routes declare `@RequirePermissions('module.action')`; use only keys in `src/common/auth/permission-keys.ts`.
-- The permission catalog is fixed: **17 modules / 87 keys** (`users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, `returns`, `payments`, `notifications`, `reports`). Permission keys are seeded and cannot be created/deleted at runtime; role grants can be replaced.
+- The permission catalog is fixed: **14 modules / 69 keys** (`users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, `reports`). Permission keys are seeded and cannot be created/deleted at runtime; role grants can be replaced.
 - Seed roles are `OWNER`, `ADMIN`, `OFFICER`, `RIDER`, and `SHOP`. `scripts/seed.ts` is authoritative for the exact grants. OWNER is a system role and receives the whole current catalog.
 - Never expose `passwordHash`. Authentication uses access tokens; the auth guard rebuilds the active user from the database.
 
@@ -70,7 +70,6 @@ E2E requires `docker compose up -d` and writes to the Compose Postgres database.
 
 - Cross-cutting: `src/common/auth/`, `src/common/database/`, `src/common/health/`, `src/common/utils/`, and `src/config/`.
 - Registered feature modules: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners` (permission module `partners`), `ways`, `reports`, and `shop-portal`.
-- `returns`, `payments`, and `notifications` are reserved permission-catalog modules only; there are no corresponding feature modules yet.
 - Each feature owns its controller/service/DTOs and schema. Every new table must be re-exported from `src/common/database/schema.ts` or Drizzle Kit will not see it.
 - Controllers use `@Controller({ path: 'x', version: '1' })`; all routes are under `/api/v1`. `/api/v1/docs-json` is the canonical generated OpenAPI contract; response DTOs need accurate `@Api*Response({ type })` metadata.
 

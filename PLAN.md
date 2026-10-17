@@ -12,12 +12,12 @@ This plan records the implemented API and the remaining gated work. All new work
 - **Phase 6 — Returns/payment ledger/reconciliation:** blocked
 - **Phase 7 — Notifications/Viber:** later
 - **Phase 8 — Reports:** partially implemented in phases D/E; additional scope remains
-- **Permission catalog:** 17 modules / 87 fixed keys, defined by `src/common/auth/permission-keys.ts`
+- **Permission catalog:** 14 modules / 69 fixed keys, defined by `src/common/auth/permission-keys.ts`
 
 ## Implemented workflow v2 phases
 
 - **A — Schema, state machine, permissions:** new order fields and history/audit tables, townships, delivery partners, ways, settings, revised order states, fixed permission catalog and SHOP role are implemented. The database reset/reseed workflow is available through `pnpm db:reset` and `pnpm db:seed`.
-- **B — Office orders and approval:** order creation/edit/audit, assignment, postponement, return, cancellation, approval, send-back, and partner delivered operations are implemented, along with township and delivery-partner CRUD.
+- **B — Office orders and approval:** order creation/edit/audit, assignment, postponement, cancellation, approval, send-back, and partner delivered operations are implemented, along with township and delivery-partner CRUD.
 - **C — Ways and commission:** rider ways, per-way commission and override, settings, order movement, rider delivery submission, and pay-anyway recording are implemented.
 - **D — Reports and dashboards:** order, shop statement, rider collection, rider payout, office dashboard, and rider dashboard APIs are implemented; report exports support CSV/XLSX.
 - **E — Shop portal:** shop-scoped orders, detail/history, dashboard, statement, and CSV/XLSX exports are implemented with dedicated shop DTOs.
@@ -32,7 +32,7 @@ There is **no payment ledger, no reconciliation model/process, no shop-prepaymen
 
 ## Phase 7 — Notifications and Viber — LATER
 
-No notification feature module or schedule/send-log API is implemented. Viber configuration placeholders and notification permission keys exist. Scope and provider/scheduling decisions remain for a later phase.
+No notification feature module, notification permission keys, or schedule/send-log API is implemented. Scope and provider/scheduling decisions remain for a later phase.
 
 ## Phase 8 — Reports — PARTIALLY IMPLEMENTED
 

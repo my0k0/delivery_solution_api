@@ -86,12 +86,11 @@ Demo login emails created by `pnpm db:seed:demo`: `rider1@demo.delivery.local`, 
 - `src/app.module.ts` registers global guards in order: `JwtAuthGuard`, then `PermissionsGuard`.
 - Shared code: `src/common/auth/`, `src/common/database/`, `src/common/health/`, `src/common/utils/`, and `src/config/`.
 - Registered feature modules: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners`, `ways`, `reports`, and `shop-portal`. `delivery-partners` uses the permission module name `partners`.
-- Permission catalog entries for `returns`, `payments`, and `notifications` exist, but those feature modules are not implemented.
 - Feature schemas live with their module. Re-export every new table from `src/common/database/schema.ts`; that is the central schema entry used by Drizzle Kit.
 
 ## RBAC
 
-The catalog in `src/common/auth/permission-keys.ts` is fixed and seeded: **17 modules / 87 keys**. Modules: `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, `returns`, `payments`, `notifications`, `reports`. The catalog has read-only API access; role grant sets are replaceable with `permissions.update`, but keys cannot be created/deleted at runtime.
+The catalog in `src/common/auth/permission-keys.ts` is fixed and seeded: **14 modules / 69 keys**. Modules: `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, `reports`. The catalog has read-only API access; role grant sets are replaceable with `permissions.update`, but keys cannot be created/deleted at runtime.
 
 Seeded roles and grants from `scripts/seed.ts`:
 
