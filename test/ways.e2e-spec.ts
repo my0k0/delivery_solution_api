@@ -175,4 +175,38 @@ describe('Phase C ways and commission (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ reason: 'Already earned' }).expect(409);
   });
+
+  it('caps the commission rate at what numeric(12,2) can store', async () => {
+    const commissionUrl = '/api/v1/ways/settings/commission-per-way';
+    const put = (value: string) =>
+      request(app.getHttpServer())
+        .put(commissionUrl)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ value });
+
+    const original = await request(app.getHttpServer())
+      .get(commissionUrl)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    // 11+ integer digits passed the old @MaxLength(13), then overflowed
+    // numeric(12,2) in Postgres and surfaced as a 500 instead of a 400.
+    await put('12345678901').expect(400);
+    await put('1234567890123').expect(400);
+    await put('1.234').expect(400);
+    await put('1234567890.123').expect(400);
+
+    const integerOnly = await put('9999999999').expect(200);
+    expect(integerOnly.body).toEqual({
+      key: 'commissionPerWay',
+      value: '9999999999.00',
+    });
+    const maxValue = await put('9999999999.99').expect(200);
+    expect(maxValue.body).toEqual({
+      key: 'commissionPerWay',
+      value: '9999999999.99',
+    });
+
+    await put(original.body.value as string).expect(200);
+  });
 });

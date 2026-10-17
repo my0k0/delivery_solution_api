@@ -14,6 +14,12 @@ import {
   type RiderVehicleType,
 } from '../rider.schema.js';
 
+/**
+ * Money string capped at what `numeric(12,2)` stores: up to 10 integer digits
+ * and at most 2 decimals. Matches `MONEY_PATTERN` in the order DTOs.
+ */
+const MONEY_PATTERN = /^\d{1,10}(\.\d{1,2})?$/;
+
 export class UpdateRiderDto {
   @ApiPropertyOptional({ example: 'John Rider Updated' })
   @IsOptional()
@@ -44,11 +50,14 @@ export class UpdateRiderDto {
   @MaxLength(72)
   password?: string;
 
-  @ApiPropertyOptional({ example: '600.00', nullable: true })
+  @ApiPropertyOptional({
+    example: '600.00',
+    nullable: true,
+    pattern: '^\\d{1,10}(\\.\\d{1,2})?$',
+  })
   @IsOptional()
   @IsString()
-  @Matches(/^\d+(\.\d{1,2})?$/)
-  @MaxLength(13)
+  @Matches(MONEY_PATTERN)
   commissionPerWayOverride?: string | null;
 
   @ApiPropertyOptional({ enum: RIDER_VEHICLE_TYPES, default: 'BIKE' })

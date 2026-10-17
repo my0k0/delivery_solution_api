@@ -214,4 +214,33 @@ describe('Riders (e2e)', () => {
     expect(updated.body.vehiclePlate).toBe(`CAR-${run}`);
     expect(updated.body.licenseNo).toBeNull();
   });
+
+  it('rejects a commission override that numeric(12,2) cannot store', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/riders')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        name: `Override Rider ${run}`,
+        email: `override-rider-${run}@e2e.local`,
+        password: 'password1',
+      })
+      .expect(201);
+    const riderId = created.body.id as string;
+    createdRiderIds.push(riderId);
+    createdUserIds.push(created.body.userId as string);
+
+    // 11 integer digits overflow numeric(12,2); the DTO used to allow 13 chars.
+    await request(app.getHttpServer())
+      .patch(`/api/v1/riders/${riderId}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ commissionPerWayOverride: '12345678901' })
+      .expect(400);
+
+    const atLimit = await request(app.getHttpServer())
+      .patch(`/api/v1/riders/${riderId}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ commissionPerWayOverride: '9999999999.99' })
+      .expect(200);
+    expect(atLimit.body.commissionPerWayOverride).toBe('9999999999.99');
+  });
 });
