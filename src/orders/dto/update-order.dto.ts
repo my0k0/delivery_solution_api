@@ -22,6 +22,7 @@ export class UpdateOrderDto {
   @ApiPropertyOptional({ nullable: true, type: Object }) @IsOptional() @IsObject() packageInfo?: Record<string, unknown> | null;
   @ApiPropertyOptional() @IsOptional() @IsString() @Matches(MONEY_PATTERN) packagePrice?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @Matches(MONEY_PATTERN) deliveryFee?: string;
+  @ApiPropertyOptional({ description: 'Rider commission for this order; overrides the township default' }) @IsOptional() @IsString() @Matches(MONEY_PATTERN) commissionFee?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isPackagePaidToShop?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isFeePaidToShop?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsString() @Matches(MONEY_PATTERN) partnerFee?: string;

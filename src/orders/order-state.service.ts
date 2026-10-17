@@ -23,7 +23,6 @@ type OrderTransitionUpdates = Partial<
     | 'assigneeType'
     | 'riderId'
     | 'partnerId'
-    | 'wayId'
     | 'deliveredAt'
     | 'cancelReason'
   >

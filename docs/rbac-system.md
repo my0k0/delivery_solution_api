@@ -8,21 +8,20 @@ Authorization follows `user → role → permission grants`. A user's `role_id` 
 
 ## Fixed permission catalog
 
-`src/common/auth/permission-keys.ts` is the source of truth for the catalog. It defines a literal `PermissionKey` union and **14 modules / 69 permission keys**:
+`src/common/auth/permission-keys.ts` is the source of truth for the catalog. It defines a literal `PermissionKey` union and **13 modules / 42 permission keys**:
 
 | Module | Actions |
 |---|---|
-| `users` | `create`, `read`, `update`, `delete`, `export`, `import` |
+| `users` | `create`, `read`, `update`, `delete` |
 | `roles` | `create`, `read`, `update`, `delete` |
 | `permissions` | `read`, `update` |
-| `shops` | `create`, `read`, `update`, `delete`, `export`, `import` |
-| `customers` | `create`, `read`, `update`, `delete`, `export`, `import` |
-| `riders` | `create`, `read`, `update`, `delete`, `export`, `import` |
-| `orders` | `create`, `read`, `update`, `delete`, `export`, `import`, `cancel`, `update_costs`, `update_after_approval` |
-| `deliveries` | `create`, `read`, `update`, `delete`, `export`, `import`, `approve` |
-| `townships` | `create`, `read`, `update`, `delete`, `export`, `import` |
-| `partners` | `create`, `read`, `update`, `delete`, `export`, `import` |
-| `ways` | `create`, `read`, `update`, `delete`, `export`, `import`, `override_commission` |
+| `shops` | `create`, `read`, `update`, `delete` |
+| `customers` | `create`, `read`, `update`, `delete` |
+| `riders` | `create`, `read`, `update`, `delete` |
+| `orders` | `create`, `read`, `update`, `cancel`, `update_after_approval` |
+| `deliveries` | `read`, `update`, `approve` |
+| `townships` | `create`, `read`, `update`, `delete` |
+| `partners` | `create`, `read`, `update`, `delete` |
 | `shop-portal` | `read` |
 | `shop-reports` | `export` |
 | `reports` | `read`, `export` |
@@ -38,8 +37,8 @@ The seed script synchronizes database catalog rows from this list. `GET /api/v1/
 | Role | Seeded effective grants |
 |---|---|
 | `OWNER` | Entire current catalog. System roles short-circuit grant-row lookup, so OWNER has no `role_permissions` rows. |
-| `ADMIN` | All 69 catalog keys. |
-| `OFFICER` | `orders.create`, `orders.read`, `orders.update`, `orders.cancel`, `orders.update_costs`, `orders.update_after_approval`; `deliveries.read`, `deliveries.update`, `deliveries.approve`; `townships.read/create/update/delete`; `partners.read/create/update/delete`; `ways.create/read/update`; `reports.read`, `reports.export`. |
+| `ADMIN` | All 42 catalog keys. |
+| `OFFICER` | `orders.create`, `orders.read`, `orders.update`, `orders.cancel`, `orders.update_after_approval`; `deliveries.read`, `deliveries.update`, `deliveries.approve`; `townships.read/create/update/delete`; `partners.read/create/update/delete`; `reports.read`, `reports.export`. |
 | `RIDER` | `deliveries.read`, `deliveries.update`. |
 | `SHOP` | `shop-portal.read`, `shop-reports.export`. |
 

@@ -19,7 +19,7 @@ Utility-only backend work needs no frontend skill.
 
 ## Project and phase status
 
-Foundation, Phase 1 (Users/Auth/RBAC), and Phase 2 (master data) are complete. Phases 3–5 are superseded by `docs/delivery-workflow-v2.md`; workflow v2 phases A–E are complete: schema/state/RBAC, office orders and approval, ways/commission, reports/dashboards, and shop portal. Phase 6 (returns/payment ledger/reconciliation) remains blocked; Phase 7 (notifications/Viber) is later; Phase 8 reporting is partially delivered by phases D/E, with additional scope still to be defined. See `README.md`, `PLAN.md`, and the workflow document's As built section.
+Foundation, Phase 1 (Users/Auth/RBAC), and Phase 2 (master data) are complete. Phases 3–5 are superseded by `docs/delivery-workflow-v2.md`; workflow v2 phases A–E are complete: schema/state/RBAC, office orders and approval, per-order commission, reports/dashboards, and shop portal. Phase 6 (returns/payment ledger/reconciliation) remains blocked; Phase 7 (notifications/Viber) is later; Phase 8 reporting is partially delivered by phases D/E, with additional scope still to be defined. See `README.md`, `PLAN.md`, and the workflow document's As built section.
 
 ## Type safety / code quality (mandatory)
 
@@ -62,14 +62,14 @@ E2E requires `docker compose up -d` and writes to the Compose Postgres database.
 
 - `src/app.module.ts` registers global JWT authentication and permission guards. Every route needs a bearer token unless marked `@Public()`.
 - Protected routes declare `@RequirePermissions('module.action')`; use only keys in `src/common/auth/permission-keys.ts`.
-- The permission catalog is fixed: **14 modules / 69 keys** (`users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, `reports`). Permission keys are seeded and cannot be created/deleted at runtime; role grants can be replaced.
+- The permission catalog is fixed: **13 modules / 42 keys** (`users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`). Permission keys are seeded and cannot be created/deleted at runtime; role grants can be replaced.
 - Seed roles are `OWNER`, `ADMIN`, `OFFICER`, `RIDER`, and `SHOP`. `scripts/seed.ts` is authoritative for the exact grants. OWNER is a system role and receives the whole current catalog.
 - Never expose `passwordHash`. Authentication uses access tokens; the auth guard rebuilds the active user from the database.
 
 ## Architecture
 
 - Cross-cutting: `src/common/auth/`, `src/common/database/`, `src/common/health/`, `src/common/utils/`, and `src/config/`.
-- Registered feature modules: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners` (permission module `partners`), `ways`, `reports`, and `shop-portal`.
+- Registered feature modules: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners` (permission module `partners`), `reports`, and `shop-portal`.
 - Each feature owns its controller/service/DTOs and schema. Every new table must be re-exported from `src/common/database/schema.ts` or Drizzle Kit will not see it.
 - Controllers use `@Controller({ path: 'x', version: '1' })`; all routes are under `/api/v1`. `/api/v1/docs-json` is the canonical generated OpenAPI contract; response DTOs need accurate `@Api*Response({ type })` metadata.
 

@@ -1,6 +1,6 @@
 # Delivery Management System — Backend API
 
-NestJS 12 + TypeScript API for a single delivery company's operations. It manages shops, customers, riders, delivery partners, townships, orders, rider ways and commission, shop access, and operational reports. The current order workflow and implemented scope are documented in [`docs/delivery-workflow-v2.md`](docs/delivery-workflow-v2.md).
+NestJS 12 + TypeScript API for a single delivery company's operations. It manages shops, customers, riders, delivery partners, townships, orders, rider commission, shop access, and operational reports. The current order workflow and implemented scope are documented in [`docs/delivery-workflow-v2.md`](docs/delivery-workflow-v2.md).
 
 ## Current status
 
@@ -66,7 +66,7 @@ pnpm test:e2e
 
 ## Authentication and permissions
 
-All routes except public routes require a JWT access token from `POST /api/v1/auth/login`. Global guards authenticate the active user and check route permissions. The permission catalog is fixed in `src/common/auth/permission-keys.ts`: **14 modules / 69 keys**. The modules are `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, and `reports`. Keys are seeded; runtime APIs can read the catalog and replace role grants, but cannot create or delete permission keys.
+All routes except public routes require a JWT access token from `POST /api/v1/auth/login`. Global guards authenticate the active user and check route permissions. The permission catalog is fixed in `src/common/auth/permission-keys.ts`: **13 modules / 42 keys**. The modules are `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, and `reports`. Keys are seeded; runtime APIs can read the catalog and replace role grants, but cannot create or delete permission keys.
 
 Seeded roles are `OWNER` (system role, all catalog permissions), `ADMIN` (all catalog permissions), `OFFICER` (order operations, delivery approval, township/partner/way operations, and reports), `RIDER` (own delivery read/update), and `SHOP` (shop portal read and shop report export). The exact seed grants are in `scripts/seed.ts`.
 
@@ -78,11 +78,11 @@ The real order states are `PENDING`, `ASSIGNED`, `AWAITING_APPROVAL`, `DELIVERED
 - Riders can submit an assigned order as delivered. It becomes `AWAITING_APPROVAL`; an officer approves it to `DELIVERED` or sends it back to `ASSIGNED` with a shop-visible reason and optional internal note.
 - An officer can mark a partner order delivered directly. Partner orders do not belong to a way and do not earn rider commission.
 - Officers can postpone an order (clear assignee to `PENDING`) or cancel it from `PENDING` or `ASSIGNED` with a required reason — cancelling covers both a called-off delivery and a package that came back to the shop. Cancelled orders are terminal.
-- Order edits are audited field-by-field. Cost changes require `orders.update_costs`; cost changes after delivery approval also require `orders.update_after_approval` and a reason.
+- Order edits are audited field-by-field. Cost changes require `orders.update`; cost changes after delivery approval also require `orders.update_after_approval` and a reason.
 
 ### Ways, commission, and order money
 
-Assigning an order to a rider joins that rider's open way for the local day, creating it if needed. A way holds multiple orders; its commission is per way, not per order. The default rate is 500 MMK, configurable at `GET/PUT /api/v1/ways/settings/commission-per-way`, with an optional rider override. A way's commission is earned when at least one order is approved as delivered; a way with orders but none delivered is pending approval, and a way with no orders is empty. OWNER and ADMIN have `ways.override_commission` by default; authorization is grant-based, so any role granted that key can use **Pay anyway** for a way with no delivered order, with a required reason and recorded actor/time.
+Rider commission is per order. `orders.commissionFee` is prefilled from the township's required `defaultCommissionFee` (seed 500 MMK) and can be overridden per order; a partner order's commission is always `0`, and an order with no township carries `0`. An order's commission is **earned** once the order is approved as delivered (`DELIVERED`) and **pending** while it awaits approval. The earlier per-way model — ways, the `commissionPerWay` setting, per-rider overrides, and the **Pay anyway** flow (`ways.override_commission`) — was removed on 2026-10-18.
 
 Money is stored as SQL `numeric` and returned as decimal strings. COD to collect and net owed to the shop are derived from `packagePrice`, `deliveryFee`, `isPackagePaidToShop`, and `isFeePaidToShop`. COD is counted as collected only once an order is `DELIVERED` (including approved rider deliveries); open orders contribute to expected COD. These are projections, not a cash-received ledger.
 
@@ -100,7 +100,7 @@ Date-range reports default to entry date (`createdAt`) unless a delivered-date b
 
 ## Architecture
 
-Feature modules registered in `src/app.module.ts`: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners` (permission module `partners`), `ways`, `reports`, and `shop-portal`. Shared infrastructure is under `src/common/` (database, auth, health, utilities); configuration is under `src/config/`.
+Feature modules registered in `src/app.module.ts`: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners` (permission module `partners`), `reports`, and `shop-portal`. Shared infrastructure is under `src/common/` (database, auth, health, utilities); configuration is under `src/config/`.
 
 OpenAPI at `/api/v1/docs-json` is the canonical API contract.
 
@@ -108,7 +108,7 @@ OpenAPI at `/api/v1/docs-json` is the canonical API contract.
 
 - [x] Foundation and Phase 1 (Users/Auth/RBAC)
 - [x] Phases 2–5 replaced by workflow v2 phases A–E
-- [x] Workflow v2 phases A–E: schema/state/RBAC, office orders and approval, ways/commission, reports/dashboards, shop portal
+- [x] Workflow v2 phases A–E: schema/state/RBAC, office orders and approval, per-order commission, reports/dashboards, shop portal
 - [ ] Phase 6: returns workflow, payment ledger, shop prepayments, cash-received recording, and reconciliation (blocked)
 - [ ] Phase 7: notifications and Viber
 - [ ] Phase 8: additional reports beyond the order, shop, rider, and dashboard reporting already delivered

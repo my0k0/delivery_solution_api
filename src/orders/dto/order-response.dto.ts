@@ -14,7 +14,6 @@ export class OrderResponseDto {
   @ApiPropertyOptional({ enum: ['RIDER', 'PARTNER'], nullable: true })
   assigneeType: AssigneeType | null;
   @ApiPropertyOptional({ nullable: true }) riderId: string | null;
-  @ApiPropertyOptional({ nullable: true, format: 'uuid' }) wayId: string | null;
   @ApiPropertyOptional({ nullable: true }) partnerId: string | null;
   @ApiPropertyOptional({ nullable: true }) partnerTrackingNo: string | null;
   @ApiPropertyOptional({ type: Object, nullable: true })
@@ -23,6 +22,8 @@ export class OrderResponseDto {
   packagePrice: string;
   @ApiProperty({ example: '3500.00', description: 'Decimal string' })
   deliveryFee: string;
+  @ApiProperty({ example: '500.00', description: 'Rider commission for this order; not exposed to shop users' })
+  commissionFee: string;
   @ApiProperty() isPackagePaidToShop: boolean;
   @ApiProperty() isFeePaidToShop: boolean;
   @ApiProperty({ description: 'Internal partner cost; not exposed to shop users' })

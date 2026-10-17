@@ -21,9 +21,6 @@ export class RiderResponseDto {
   @ApiProperty({ enum: USER_STATUSES, enumName: 'UserStatus' })
   status: UserStatus;
 
-  @ApiPropertyOptional({ example: '600.00', nullable: true })
-  commissionPerWayOverride: string | null;
-
   @ApiProperty({ enum: RIDER_VEHICLE_TYPES, enumName: 'RiderVehicleType' })
   vehicleType: RiderVehicleType;
 

@@ -8,7 +8,6 @@ export * from '../../customers/customer.schema.js';
 export * from '../../riders/rider.schema.js';
 export * from '../../townships/township.schema.js';
 export * from '../../delivery-partners/delivery-partner.schema.js';
-export * from '../../ways/way.schema.js';
 export * from '../../orders/order.schema.js';
 export * from '../../orders/order-status-history.schema.js';
 export * from '../../orders/order-field-audit.schema.js';

@@ -35,6 +35,7 @@ export class TownshipsService {
       const [row] = await this.database.db.insert(townships).values({
         name: input.name.trim(),
         defaultDeliveryFee: input.defaultDeliveryFee,
+        defaultCommissionFee: input.defaultCommissionFee,
         leadTimeDays: input.leadTimeDays,
         defaultAssigneeType: input.defaultAssigneeType ?? null,
         defaultRiderId: input.defaultRiderId ?? null,
@@ -55,6 +56,7 @@ export class TownshipsService {
       const [row] = await this.database.db.update(townships).set({
         ...(input.name !== undefined && { name: input.name.trim() }),
         ...(input.defaultDeliveryFee !== undefined && { defaultDeliveryFee: input.defaultDeliveryFee }),
+        ...(input.defaultCommissionFee !== undefined && { defaultCommissionFee: input.defaultCommissionFee }),
         ...(input.leadTimeDays !== undefined && { leadTimeDays: input.leadTimeDays }),
         ...(input.defaultAssigneeType !== undefined && { defaultAssigneeType: input.defaultAssigneeType }),
         ...(input.defaultRiderId !== undefined && { defaultRiderId: input.defaultRiderId }),

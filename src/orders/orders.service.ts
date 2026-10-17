@@ -12,7 +12,6 @@ import {
   desc,
   eq,
   exists,
-  inArray,
   ilike,
   or,
   sql,
@@ -52,9 +51,6 @@ import {
   type OrderStatus,
 } from './order.schema.js';
 import { generateTrackingCode } from './tracking-code.util.js';
-import { WaysService } from '../ways/ways.service.js';
-import { ways } from '../ways/way.schema.js';
-import { getWaySequence } from '../ways/way-sequence.util.js';
 
 const MAX_TRACKING_CODE_ATTEMPTS = 3;
 const MONEY_FIELDS = [
@@ -63,6 +59,7 @@ const MONEY_FIELDS = [
   'isPackagePaidToShop',
   'isFeePaidToShop',
   'partnerFee',
+  'commissionFee',
 ] as const;
 
 type OrderRow = typeof orders.$inferSelect;
@@ -83,7 +80,6 @@ export function toOrderResponse(row: OrderRow, timeZone = 'Asia/Yangon'): OrderR
     townshipId: row.townshipId,
     assigneeType: row.assigneeType,
     riderId: row.riderId,
-    wayId: row.wayId,
     partnerId: row.partnerId,
     partnerTrackingNo: row.partnerTrackingNo,
     packageInfo: row.packageInfo as Record<string, unknown> | null,
@@ -92,6 +88,7 @@ export function toOrderResponse(row: OrderRow, timeZone = 'Asia/Yangon'): OrderR
     isPackagePaidToShop: row.isPackagePaidToShop,
     isFeePaidToShop: row.isFeePaidToShop,
     partnerFee: row.partnerFee,
+    commissionFee: row.commissionFee,
     estimatedDeliveryDate: row.estimatedDeliveryDate ? getDateInTimeZone(row.estimatedDeliveryDate, timeZone) : null,
     deliveredAt: row.deliveredAt?.toISOString() ?? null,
     deliveryAddress: row.deliveryAddress,
@@ -164,7 +161,6 @@ export class OrdersService {
     private readonly database: DatabaseService,
     private readonly orderState: OrderStateService,
     private readonly permissions: PermissionService,
-    private readonly waysService: WaysService,
     config: ConfigService,
   ) {
     this.timeZone = config.get<string>('APP_TIMEZONE') ?? 'Asia/Yangon';
@@ -270,6 +266,14 @@ export class OrdersService {
             isPackagePaidToShop: input.isPackagePaidToShop ?? false,
             isFeePaidToShop: input.isFeePaidToShop ?? false,
             partnerFee: input.partnerFee ?? '0',
+            /**
+             * Commission is a rider earning. Partner orders are covered by
+             * `partnerFee` instead, so they never carry one — the invariant the
+             * deleted `orders_partner_way_consistency_check` used to hold.
+             */
+            commissionFee: assignee.type === 'PARTNER'
+              ? '0'
+              : input.commissionFee ?? township?.defaultCommissionFee ?? '0',
             estimatedDeliveryDate,
             deliveryAddress: input.deliveryAddress ?? null,
             status: initialStatus,
@@ -281,12 +285,6 @@ export class OrdersService {
             changedBy,
             newAssignee: selectionToSnapshot(assignee),
           });
-          if (assignee.type === 'RIDER' && assignee.riderId) {
-            const wayId = await this.waysService.findOrCreateOpenWayForRider(transaction, assignee.riderId);
-            const [assignedOrder] = await transaction.update(orders).set({ wayId, updatedAt: new Date() })
-              .where(eq(orders.id, inserted.id)).returning();
-            return assignedOrder ?? inserted;
-          }
           return inserted;
         });
         return toOrderResponse(order, this.timeZone);
@@ -313,6 +311,7 @@ export class OrdersService {
       ...(input.isPackagePaidToShop !== undefined && { isPackagePaidToShop: input.isPackagePaidToShop }),
       ...(input.isFeePaidToShop !== undefined && { isFeePaidToShop: input.isFeePaidToShop }),
       ...(input.partnerFee !== undefined && { partnerFee: input.partnerFee }),
+      ...(input.commissionFee !== undefined && { commissionFee: input.commissionFee }),
       ...(input.estimatedDeliveryDate !== undefined && { estimatedDeliveryDate: dateToString(input.estimatedDeliveryDate) }),
       ...(input.deliveryAddress !== undefined && { deliveryAddress: input.deliveryAddress }),
       ...(input.notes !== undefined && { notes: input.notes }),
@@ -323,6 +322,7 @@ export class OrdersService {
         candidateFields.estimatedDeliveryDate = this.addDays(getDateInTimeZone(new Date(), this.timeZone), township.leadTimeDays);
       }
       if (input.applyTownshipFee && input.deliveryFee === undefined) candidateFields.deliveryFee = township.defaultDeliveryFee;
+      if (input.applyTownshipFee && input.commissionFee === undefined) candidateFields.commissionFee = township.defaultCommissionFee;
       if (input.applyTownshipAssignee) {
         candidateFields.assigneeType = township.defaultAssigneeType;
         candidateFields.riderId = township.defaultRiderId;
@@ -352,6 +352,12 @@ export class OrdersService {
           : existing.partnerId,
       );
     }
+    /** Partner orders never carry a rider commission (see `create`). */
+    const effectiveAssigneeType = (candidateFields.assigneeType !== undefined
+      ? candidateFields.assigneeType
+      : existing.assigneeType) as AssigneeType | null;
+    if (effectiveAssigneeType === 'PARTNER') candidateFields.commissionFee = '0';
+
     const changedCandidate = Object.entries(candidateFields).filter(([field, value]) =>
       !sameValue(existing[field as keyof OrderRow], value),
     );
@@ -366,9 +372,6 @@ export class OrdersService {
     let effectivePermissions: string[] = [];
     if (changedMoneyFields.length > 0) {
       effectivePermissions = await this.permissions.getEffectivePermissions(roleId);
-      if (!effectivePermissions.includes('orders.update_costs')) {
-        throw new ForbiddenException('Changing cost fields requires orders.update_costs');
-      }
       if (existing.status === 'DELIVERED') {
         if (!effectivePermissions.includes('orders.update_after_approval')) {
           throw new ForbiddenException('Changing costs after approval requires orders.update_after_approval');
@@ -415,9 +418,6 @@ export class OrdersService {
       if (changedAssignee) {
         const nextStatus: OrderStatus = newAssigneeSnapshot === null ? 'PENDING' : 'ASSIGNED';
         if (current.status !== nextStatus || current.status === 'ASSIGNED') {
-          const wayId = newAssignment.type === 'RIDER' && newAssignment.riderId
-            ? await this.waysService.findOrCreateOpenWayForRider(transaction, newAssignment.riderId)
-            : null;
           await this.orderState.applyTransitionInTransaction(transaction, {
             orderId: id,
             fromStatus: current.status,
@@ -430,7 +430,6 @@ export class OrdersService {
               assigneeType: newAssignment.type,
               riderId: newAssignment.riderId,
               partnerId: newAssignment.partnerId,
-              wayId,
             },
           });
           status = nextStatus;
@@ -550,7 +549,6 @@ export class OrdersService {
         deliveryFee: orders.deliveryFee,
         isPackagePaidToShop: orders.isPackagePaidToShop,
         isFeePaidToShop: orders.isFeePaidToShop,
-        wayId: orders.wayId,
       })
       .from(orders)
       .innerJoin(customers, eq(orders.customerId, customers.id))
@@ -563,24 +561,6 @@ export class OrdersService {
         ),
       )
       .orderBy(desc(orders.createdAt));
-
-    const wayIds = [...new Set(rows.map((row) => row.wayId).filter((wayId): wayId is string => wayId !== null))];
-    const wayRows = wayIds.length
-      ? await this.database.db.select({
-          id: ways.id,
-          riderId: ways.riderId,
-          wayDate: ways.wayDate,
-          createdAt: ways.createdAt,
-        }).from(ways).where(inArray(ways.id, wayIds))
-      : [];
-    const wayLabels = new Map<string, string>();
-    for (const way of wayRows) {
-      const sameDayWays = await this.database.db.select({ id: ways.id, createdAt: ways.createdAt }).from(ways).where(and(
-        eq(ways.riderId, way.riderId),
-        eq(ways.wayDate, way.wayDate),
-      )).orderBy(asc(ways.createdAt), asc(ways.id));
-      wayLabels.set(way.id, `${way.wayDate} · ${getWaySequence(sameDayWays, way.id)}`);
-    }
 
     return rows.map((row) => ({
       id: row.id,
@@ -599,8 +579,6 @@ export class OrdersService {
         row.isFeePaidToShop,
       ),
       status: 'ASSIGNED',
-      wayId: row.wayId,
-      wayLabel: row.wayId ? wayLabels.get(row.wayId) ?? null : null,
     }));
   }
 
@@ -613,9 +591,6 @@ export class OrdersService {
       const unchanged = sameValue(previousAssignee, selectedAssignee);
       const nextStatus: OrderStatus = selectedAssignee === null ? 'PENDING' : 'ASSIGNED';
       if (unchanged && current.status === nextStatus) return;
-      const wayId = assignment.type === 'RIDER' && assignment.riderId
-        ? await this.waysService.findOrCreateOpenWayForRider(transaction, assignment.riderId)
-        : null;
       await this.orderState.applyTransitionInTransaction(transaction, {
         orderId: id,
         fromStatus: current.status,
@@ -628,7 +603,6 @@ export class OrdersService {
           assigneeType: assignment?.type ?? null,
           riderId: assignment?.riderId ?? null,
           partnerId: assignment?.partnerId ?? null,
-          wayId,
         },
       });
     });
@@ -643,16 +617,13 @@ export class OrdersService {
       note: string;
       reason?: string;
       internalNote?: string;
-      updates?: Partial<Pick<typeof orders.$inferInsert, 'cancelReason' | 'wayId'>>;
+      updates?: Partial<Pick<typeof orders.$inferInsert, 'cancelReason'>>;
     },
   ): Promise<OrderResponseDto> {
     await this.database.db.transaction(async (transaction) => {
         const [current] = await transaction.select().from(orders).where(eq(orders.id, id)).for('update');
         if (!current) throw new NotFoundException(`Order '${id}' not found`);
         const transitionUpdates = { ...details.updates };
-        if (toStatus === 'ASSIGNED' && current.assigneeType === 'RIDER' && current.riderId) {
-          transitionUpdates.wayId = await this.waysService.findOrCreateOpenWayForRider(transaction, current.riderId);
-        }
         await this.orderState.applyTransitionInTransaction(transaction, {
         orderId: id,
         fromStatus: current.status,

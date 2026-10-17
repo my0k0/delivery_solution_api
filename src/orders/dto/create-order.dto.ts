@@ -53,6 +53,12 @@ export class CreateOrderDto {
   @Matches(MONEY_PATTERN)
   deliveryFee?: string;
 
+  @ApiPropertyOptional({ example: '500.00', description: 'Rider commission for this order; overrides the township default' })
+  @IsOptional()
+  @IsString()
+  @Matches(MONEY_PATTERN)
+  commissionFee?: string;
+
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()

@@ -8,6 +8,7 @@ function baseTownship(overrides: Record<string, unknown> = {}) {
     id: '33333333-3333-4333-8333-333333333333',
     name: 'Demo Central',
     defaultDeliveryFee: '3500.00',
+    defaultCommissionFee: '500.00',
     leadTimeDays: 3,
     defaultAssigneeType: null,
     defaultRiderId: null,
@@ -68,6 +69,7 @@ describe('TownshipsService', () => {
     const result = await service.create({
       name: ' Demo Central ',
       defaultDeliveryFee: '3500.00',
+      defaultCommissionFee: '500.00',
       leadTimeDays: 3,
     });
 
@@ -75,6 +77,7 @@ describe('TownshipsService', () => {
     expect(db.insert.mock.results[0].value.values).toHaveBeenCalledWith({
       name: 'Demo Central',
       defaultDeliveryFee: '3500.00',
+      defaultCommissionFee: '500.00',
       leadTimeDays: 3,
       defaultAssigneeType: null,
       defaultRiderId: null,

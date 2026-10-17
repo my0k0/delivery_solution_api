@@ -18,8 +18,6 @@ import { UpdateRiderDto } from './dto/update-rider.dto.js';
 import { AssignableRiderResponseDto } from './dto/assignable-rider-response.dto.js';
 import { riders } from './rider.schema.js';
 import type { RiderVehicleType } from './rider.schema.js';
-import { PermissionService } from '../permissions/permissions.service.js';
-import { assertCanOverrideCommission } from '../ways/way-rules.util.js';
 
 type RiderJoinedRow = {
   riderId: string;
@@ -28,7 +26,6 @@ type RiderJoinedRow = {
   email: string;
   phone: string | null;
   status: 'ACTIVE' | 'INACTIVE';
-  commissionPerWayOverride: string | null;
   vehicleType: RiderVehicleType;
   vehiclePlate: string | null;
   licenseNo: string | null;
@@ -47,7 +44,6 @@ function toRiderResponse(row: RiderJoinedRow): RiderResponseDto {
     email: row.email,
     phone: row.phone,
     status: row.status,
-    commissionPerWayOverride: row.commissionPerWayOverride,
     vehicleType: row.vehicleType,
     vehiclePlate: row.vehiclePlate,
     licenseNo: row.licenseNo,
@@ -63,7 +59,6 @@ function toRiderResponse(row: RiderJoinedRow): RiderResponseDto {
 export class RidersService {
   constructor(
     private readonly database: DatabaseService,
-    private readonly permissions: PermissionService,
   ) {}
 
   async list(query: ListRidersQueryDto): Promise<RiderListResponseDto> {
@@ -93,7 +88,6 @@ export class RidersService {
           email: users.email,
           phone: users.phone,
           status: users.status,
-          commissionPerWayOverride: riders.commissionPerWayOverride,
           vehicleType: riders.vehicleType,
           vehiclePlate: riders.vehiclePlate,
           licenseNo: riders.licenseNo,
@@ -185,11 +179,7 @@ export class RidersService {
     }
   }
 
-  async update(id: string, dto: UpdateRiderDto, roleId: string): Promise<RiderResponseDto> {
-    if (dto.commissionPerWayOverride !== undefined) {
-      const effectivePermissions = await this.permissions.getEffectivePermissions(roleId);
-      assertCanOverrideCommission(effectivePermissions);
-    }
+  async update(id: string, dto: UpdateRiderDto): Promise<RiderResponseDto> {
     const existing = await this.riderOrThrow(id);
     const email = dto.email ? normalizeEmail(dto.email) : undefined;
     const passwordHash = dto.password
@@ -225,9 +215,6 @@ export class RidersService {
         await tx
           .update(riders)
           .set({
-            ...(dto.commissionPerWayOverride !== undefined && {
-              commissionPerWayOverride: dto.commissionPerWayOverride,
-            }),
             ...(dto.vehicleType !== undefined && { vehicleType: dto.vehicleType }),
             ...(dto.vehiclePlate !== undefined && { vehiclePlate: dto.vehiclePlate }),
             ...(dto.licenseNo !== undefined && { licenseNo: dto.licenseNo }),
@@ -266,7 +253,6 @@ export class RidersService {
         email: users.email,
         phone: users.phone,
         status: users.status,
-        commissionPerWayOverride: riders.commissionPerWayOverride,
         vehicleType: riders.vehicleType,
         vehiclePlate: riders.vehiclePlate,
         licenseNo: riders.licenseNo,

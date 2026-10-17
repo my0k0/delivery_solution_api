@@ -102,9 +102,8 @@ export class RidersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRiderDto,
-    @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<RiderResponseDto> {
-    return this.ridersService.update(id, dto, currentUser.roleId);
+    return this.ridersService.update(id, dto);
   }
 
   @Delete(':id')

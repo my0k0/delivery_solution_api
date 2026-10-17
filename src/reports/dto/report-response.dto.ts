@@ -90,28 +90,17 @@ export class RiderCollectionResponseDto {
 export class RiderPayoutRowDto {
   @ApiProperty() riderId!: string;
   @ApiProperty() riderName!: string;
-  @ApiProperty() date!: string;
-  @ApiProperty() wayCount!: number;
-  @ApiProperty() rateTotal!: string;
-  @ApiProperty() earnedCount!: number;
+  @ApiProperty() deliveredOrderCount!: number;
   @ApiProperty() earnedAmount!: string;
-  @ApiProperty() pendingApprovalCount!: number;
+  @ApiProperty() pendingApprovalOrderCount!: number;
   @ApiProperty() pendingApprovalAmount!: string;
-  @ApiProperty() paidAnywayCount!: number;
-  @ApiProperty() paidAnywayAmount!: string;
-  @ApiProperty() overrideWayCount!: number;
 }
 
 export class RiderPayoutTotalsDto {
-  @ApiProperty() wayCount!: number;
-  @ApiProperty() rateTotal!: string;
-  @ApiProperty() earnedCount!: number;
+  @ApiProperty() deliveredOrderCount!: number;
   @ApiProperty() earnedAmount!: string;
-  @ApiProperty() pendingApprovalCount!: number;
+  @ApiProperty() pendingApprovalOrderCount!: number;
   @ApiProperty() pendingApprovalAmount!: string;
-  @ApiProperty() paidAnywayCount!: number;
-  @ApiProperty() paidAnywayAmount!: string;
-  @ApiProperty() overrideWayCount!: number;
 }
 
 export class RiderPayoutResponseDto {
@@ -153,8 +142,7 @@ export class TownshipSuccessRateDto {
   @ApiProperty({ description: 'Percentage from 0 to 100, to two decimals' }) successRate!: string;
 }
 
-export class OrdersPerWayDto {
-  @ApiProperty() wayId!: string;
+export class OrdersPerDayDto {
   @ApiProperty() date!: string;
   @ApiProperty() orderCount!: number;
 }
@@ -171,11 +159,11 @@ export class OfficeDashboardResponseDto {
 
 export class RiderDashboardResponseDto {
   @ApiProperty() today!: string;
-  @ApiProperty() todayWayCount!: number;
-  @ApiProperty() weekWayCount!: number;
-  @ApiProperty() monthWayCount!: number;
+  @ApiProperty() todayDeliveredCount!: number;
+  @ApiProperty() weekDeliveredCount!: number;
+  @ApiProperty() monthDeliveredCount!: number;
   @ApiProperty() commissionEarned!: string;
   @ApiProperty() commissionPending!: string;
-  @ApiProperty({ type: [OrdersPerWayDto] }) ordersPerWay!: OrdersPerWayDto[];
+  @ApiProperty({ type: [OrdersPerDayDto] }) ordersPerDay!: OrdersPerDayDto[];
   @ApiProperty() codToHandBack!: string;
 }

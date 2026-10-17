@@ -12,7 +12,6 @@ function baseRider(overrides: Record<string, unknown> = {}) {
     email: 'john.rider@delivery.local',
     phone: '09123456789',
     status: 'ACTIVE' as const,
-    commissionPerWayOverride: null,
     vehicleType: 'BIKE' as const,
     vehiclePlate: null,
     licenseNo: null,
@@ -182,7 +181,7 @@ describe('RidersService', () => {
     );
     db.select.mockReturnValueOnce(queryChain([baseRider({ name: 'Updated' })]));
 
-    const updated = await service.update(existing.riderId, { name: 'Updated' }, 'role-1');
+    const updated = await service.update(existing.riderId, { name: 'Updated' });
     expect(updated.name).toBe('Updated');
 
     db.select.mockReturnValueOnce(queryChain([existing]));

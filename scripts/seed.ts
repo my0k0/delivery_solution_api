@@ -53,7 +53,6 @@ const GRANTS: Record<Exclude<SeedRoleName, 'OWNER'>, string[]> = {
     'orders.read',
     'orders.update',
     'orders.cancel',
-    'orders.update_costs',
     'orders.update_after_approval',
     'deliveries.read',
     'deliveries.update',
@@ -66,9 +65,6 @@ const GRANTS: Record<Exclude<SeedRoleName, 'OWNER'>, string[]> = {
     'partners.create',
     'partners.update',
     'partners.delete',
-    'ways.create',
-    'ways.read',
-    'ways.update',
     'reports.read',
     'reports.export',
   ],
@@ -145,11 +141,6 @@ async function main(): Promise<void> {
   const permissionIds = await upsertPermissionNames();
   const roleIds = await seedRoles();
   await seedGrants(roleIds, permissionIds);
-  await sql`
-    insert into app_settings (key, value)
-    values ('commissionPerWay', '500')
-    on conflict (key) do nothing
-  `;
 
   // Backfill any user missing a role (created before the RBAC migration) to OFFICER.
   await sql`

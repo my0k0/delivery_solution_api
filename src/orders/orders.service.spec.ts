@@ -5,7 +5,6 @@ import { DatabaseService } from '../common/database/database.service.js';
 import { PermissionService } from '../permissions/permissions.service.js';
 import { OrderStateService } from './order-state.service.js';
 import { OrdersService } from './orders.service.js';
-import { WaysService } from '../ways/ways.service.js';
 
 function baseOrder(overrides: Record<string, unknown> = {}) {
   return {
@@ -24,9 +23,9 @@ function baseOrder(overrides: Record<string, unknown> = {}) {
     isPackagePaidToShop: false,
     isFeePaidToShop: false,
     partnerFee: '0.00',
+    commissionFee: '0.00',
     estimatedDeliveryDate: null,
     deliveredAt: null,
-    wayId: null,
     deliveryAddress: null,
     cancelReason: null,
     status: 'PENDING' as const,
@@ -95,7 +94,6 @@ describe('OrdersService', () => {
     recordInitialStateInTransaction: vi.fn(),
   };
   const permissions = { getEffectivePermissions: vi.fn().mockResolvedValue([]) };
-  const waysService = { findOrCreateOpenWayForRider: vi.fn() };
 
   function prepareUpdateTransaction(initialOrder: ReturnType<typeof baseOrder>) {
     let storedOrder: Record<string, unknown> = { ...initialOrder };
@@ -137,7 +135,6 @@ describe('OrdersService', () => {
         { provide: DatabaseService, useValue: database },
         { provide: OrderStateService, useValue: orderState },
         { provide: PermissionService, useValue: permissions },
-        { provide: WaysService, useValue: waysService },
         { provide: ConfigService, useValue: { get: () => 'Asia/Yangon' } },
       ],
     }).compile();
@@ -237,9 +234,11 @@ describe('OrdersService', () => {
     const orderValues = orderInsert.values.mock.calls[0][0] as {
       status: string;
       deliveryFee: string;
+      commissionFee: string;
     };
     expect(orderValues.status).toBe('PENDING');
     expect(orderValues.deliveryFee).toBe('0');
+    expect(orderValues.commissionFee).toBe('0');
     expect(historyInsert.values).toHaveBeenCalledWith(
       expect.objectContaining({
         orderId: baseOrder().id,
@@ -249,94 +248,159 @@ describe('OrdersService', () => {
     );
   });
 
-  it('auto-joins a newly created rider order to the rider’s open way in the same transaction', async () => {
+  it('prefills the rider commission from the township default when creating an order', async () => {
+    const townshipId = '66666666-6666-4666-8666-666666666666';
     queryShops.findFirst.mockResolvedValue({ id: baseOrder().shopId });
     queryCustomers.findFirst.mockResolvedValue({ id: baseOrder().customerId });
+    queryTownships.findFirst.mockResolvedValue({
+      id: townshipId,
+      name: 'Demo Central',
+      defaultDeliveryFee: '3500.00',
+      defaultCommissionFee: '500.00',
+      leadTimeDays: 2,
+      defaultAssigneeType: null,
+      defaultRiderId: null,
+      defaultPartnerId: null,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
     queryRiders.findFirst.mockResolvedValue({ id: 'rider-1' });
-    waysService.findOrCreateOpenWayForRider.mockResolvedValue('way-1');
     const assignedOrder = baseOrder({
       status: 'ASSIGNED',
       assigneeType: 'RIDER',
       riderId: 'rider-1',
-      wayId: 'way-1',
+      deliveryFee: '3500.00',
+      commissionFee: '500.00',
     });
-    const orderInsert = { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([assignedOrder]) }) };
-    const updateWhere = { returning: vi.fn().mockResolvedValue([assignedOrder]) };
-    const updateSet = { where: vi.fn().mockReturnValue(updateWhere) };
+    const orderInsert = {
+      values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([assignedOrder]) }),
+    };
+    const historyInsert = { values: vi.fn().mockResolvedValue(undefined) };
     const transaction = {
-      insert: vi.fn().mockReturnValue(orderInsert),
-      update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue(updateSet) }),
+      insert: vi.fn().mockReturnValueOnce(orderInsert).mockReturnValueOnce(historyInsert),
     };
     db.transaction.mockImplementation(async (callback: (databaseTransaction: typeof transaction) => Promise<unknown>) => callback(transaction));
 
     const response = await service.create({
       shopId: baseOrder().shopId,
       customerId: baseOrder().customerId,
+      townshipId,
       riderId: 'rider-1',
     }, 'actor-1');
 
-    expect(waysService.findOrCreateOpenWayForRider).toHaveBeenCalledWith(transaction, 'rider-1');
-    expect(transaction.update).toHaveBeenCalled();
-    expect(response.wayId).toBe('way-1');
+    const orderValues = orderInsert.values.mock.calls[0][0] as {
+      deliveryFee: string;
+      commissionFee: string;
+    };
+    expect(orderValues.deliveryFee).toBe('3500.00');
+    expect(orderValues.commissionFee).toBe('500.00');
+    expect(response.commissionFee).toBe('500.00');
+  });
+
+  /** Partner orders are paid through `partnerFee`; they never carry a rider commission. */
+  it('never stores a commission on a partner order, even when the township and the body both set one', async () => {
+    const townshipId = '66666666-6666-4666-8666-666666666666';
+    const partnerId = '77777777-7777-4777-8777-777777777777';
+    queryShops.findFirst.mockResolvedValue({ id: baseOrder().shopId });
+    queryCustomers.findFirst.mockResolvedValue({ id: baseOrder().customerId });
+    queryTownships.findFirst.mockResolvedValue({
+      id: townshipId,
+      name: 'Demo North',
+      defaultDeliveryFee: '4500.00',
+      defaultCommissionFee: '700.00',
+      leadTimeDays: 2,
+      defaultAssigneeType: 'PARTNER',
+      defaultRiderId: null,
+      defaultPartnerId: partnerId,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    queryDeliveryPartners.findFirst.mockResolvedValue({ id: partnerId, isActive: true });
+    const partnerOrder = baseOrder({
+      status: 'ASSIGNED',
+      assigneeType: 'PARTNER',
+      partnerId,
+      deliveryFee: '4500.00',
+      commissionFee: '0.00',
+    });
+    const orderInsert = {
+      values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([partnerOrder]) }),
+    };
+    const historyInsert = { values: vi.fn().mockResolvedValue(undefined) };
+    const transaction = {
+      insert: vi.fn().mockReturnValueOnce(orderInsert).mockReturnValueOnce(historyInsert),
+    };
+    db.transaction.mockImplementation(async (callback: (databaseTransaction: typeof transaction) => Promise<unknown>) => callback(transaction));
+
+    const response = await service.create({
+      shopId: baseOrder().shopId,
+      customerId: baseOrder().customerId,
+      townshipId,
+      commissionFee: '700.00',
+    }, 'actor-1');
+
+    const orderValues = orderInsert.values.mock.calls[0][0] as { commissionFee: string };
+    expect(orderValues.commissionFee).toBe('0');
+    expect(response.commissionFee).toBe('0.00');
   });
 
   it.each([
     {
-      name: 'assigns',
+      name: 'a rider to an unassigned order',
       existing: baseOrder(),
       input: { riderId: 'rider-2' },
-      expectedWayId: 'way-2',
       expectedRiderId: 'rider-2',
+      expectedPartnerId: null,
     },
     {
-      name: 'reassigns',
-      existing: baseOrder({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId: 'rider-1', wayId: 'way-old' }),
+      name: 'a different rider to an assigned order',
+      existing: baseOrder({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId: 'rider-1' }),
       input: { riderId: 'rider-2' },
-      expectedWayId: 'way-2',
       expectedRiderId: 'rider-2',
+      expectedPartnerId: null,
     },
     {
-      name: 'clears',
-      existing: baseOrder({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId: 'rider-1', wayId: 'way-old' }),
+      name: 'no assignee when the rider is cleared',
+      existing: baseOrder({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId: 'rider-1' }),
       input: { riderId: null },
-      expectedWayId: null,
       expectedRiderId: null,
+      expectedPartnerId: null,
     },
     {
-      name: 'assigns to a partner without a way',
+      name: 'a partner to an unassigned order',
       existing: baseOrder(),
       input: { partnerId: 'partner-1' },
-      expectedWayId: null,
       expectedRiderId: null,
+      expectedPartnerId: 'partner-1',
     },
-  ])('auto-join behavior when it $name', async ({ existing, input, expectedWayId, expectedRiderId }) => {
+  ])('assigns $name', async ({ existing, input, expectedRiderId, expectedPartnerId }) => {
     queryRiders.findFirst.mockResolvedValue({ id: input.riderId ?? 'rider-2' });
     queryDeliveryPartners.findFirst.mockResolvedValue({ id: 'partner-1' });
-    waysService.findOrCreateOpenWayForRider.mockResolvedValue('way-2');
     const transaction = {
       select: vi.fn(() => queryChain([existing])),
     };
     db.transaction.mockImplementation(async (callback: (databaseTransaction: typeof transaction) => Promise<unknown>) => callback(transaction));
+    const expectedAssigneeType = expectedRiderId ? 'RIDER' : expectedPartnerId ? 'PARTNER' : null;
     const result = baseOrder({
       ...existing,
-      status: expectedRiderId === null && input.partnerId === undefined ? 'PENDING' : 'ASSIGNED',
+      status: expectedAssigneeType === null ? 'PENDING' : 'ASSIGNED',
       riderId: expectedRiderId,
-      partnerId: input.partnerId ?? null,
-      assigneeType: expectedRiderId ? 'RIDER' : input.partnerId ? 'PARTNER' : null,
-      wayId: expectedWayId,
+      partnerId: expectedPartnerId,
+      assigneeType: expectedAssigneeType,
     });
     db.select.mockReturnValue(queryChain([result]));
 
     await service.assign(existing.id, input, 'actor-1');
 
-    if (expectedRiderId) {
-      expect(waysService.findOrCreateOpenWayForRider).toHaveBeenCalledWith(transaction, expectedRiderId);
-    } else {
-      expect(waysService.findOrCreateOpenWayForRider).not.toHaveBeenCalled();
-    }
     expect(orderState.applyTransitionInTransaction).toHaveBeenCalledWith(
       transaction,
-      expect.objectContaining({ updates: expect.objectContaining({ wayId: expectedWayId }) }),
+      expect.objectContaining({
+        updates: expect.objectContaining({
+          assigneeType: expectedAssigneeType,
+          riderId: expectedRiderId,
+          partnerId: expectedPartnerId,
+        }),
+      }),
     );
   });
 
@@ -466,6 +530,23 @@ describe('OrdersService', () => {
     const response = await service.update(current.id, input, 'actor-1', 'role-1');
 
     expect(response).toMatchObject({ status: 'ASSIGNED', ...result });
+  });
+
+  it('zeroes the stored commission when an order is reassigned to a partner', async () => {
+    const partnerId = '77777777-7777-4777-8777-777777777777';
+    const current = baseOrder({
+      assigneeType: 'RIDER',
+      riderId: '66666666-6666-4666-8666-666666666666',
+      partnerId: null,
+      commissionFee: '500.00',
+      status: 'ASSIGNED',
+    });
+    prepareUpdateTransaction(current);
+    queryDeliveryPartners.findFirst.mockResolvedValue({ id: partnerId, isActive: true });
+
+    const result = await service.update(current.id, { partnerId }, 'actor-1', 'role-1');
+
+    expect(result).toMatchObject({ assigneeType: 'PARTNER', partnerId, commissionFee: '0' });
   });
 
   it('returns an order to PENDING when its assignee is explicitly cleared', async () => {

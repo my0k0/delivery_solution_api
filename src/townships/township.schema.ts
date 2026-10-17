@@ -34,6 +34,12 @@ export const townships = pgTable(
     })
       .notNull()
       .default('0'),
+    defaultCommissionFee: numeric('default_commission_fee', {
+      precision: 12,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
     leadTimeDays: integer('lead_time_days').notNull().default(0),
     defaultAssigneeType: townshipDefaultAssigneeTypeEnum(
       'default_assignee_type',

@@ -19,7 +19,6 @@ import { users } from '../src/users/user.schema.js';
 import { orders } from '../src/orders/order.schema.js';
 import { orderStatusHistory } from '../src/orders/order-status-history.schema.js';
 import { riders } from '../src/riders/rider.schema.js';
-import { ways } from '../src/ways/way.schema.js';
 
 describe('Phase D reports and dashboards (e2e)', () => {
   let app: INestApplication;
@@ -79,7 +78,7 @@ describe('Phase D reports and dashboards (e2e)', () => {
     isPackagePaidToShop?: boolean;
     isFeePaidToShop?: boolean;
     estimatedDeliveryDate?: string;
-  }): Promise<{ id: string; trackingCode: string; wayId: string | null }> {
+  }): Promise<{ id: string; trackingCode: string; commissionFee: string }> {
     const response = await request(app.getHttpServer()).post('/api/v1/orders')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
@@ -97,7 +96,7 @@ describe('Phase D reports and dashboards (e2e)', () => {
     const result = {
       id: response.body.id as string,
       trackingCode: response.body.trackingCode as string,
-      wayId: response.body.wayId as string | null,
+      commissionFee: response.body.commissionFee as string,
     };
     orderIds.push(result.id);
     return result;
@@ -150,7 +149,7 @@ describe('Phase D reports and dashboards (e2e)', () => {
     }).returning({ id: customers.id });
     customerId = customer.id;
     const [township] = await database.db.insert(townships).values({
-      name: '\tformula', defaultDeliveryFee: '3500.00', leadTimeDays: 2,
+      name: '\tformula', defaultDeliveryFee: '3500.00', defaultCommissionFee: '500.00', leadTimeDays: 2,
     }).returning({ id: townships.id });
     townshipIds.push(township.id);
 
@@ -178,7 +177,6 @@ describe('Phase D reports and dashboards (e2e)', () => {
       await database.db.delete(orders).where(inArray(orders.id, orderIds));
     }
     if (riderId && secondRiderId) {
-      await database.db.delete(ways).where(inArray(ways.riderId, [riderId, secondRiderId]));
       await database.db.delete(riders).where(inArray(riders.id, [riderId, secondRiderId]));
     }
     if (createdUserIds.length) await database.db.delete(users).where(inArray(users.id, createdUserIds));
@@ -206,28 +204,21 @@ describe('Phase D reports and dashboards (e2e)', () => {
     await request(app.getHttpServer()).post(`/api/v1/orders/${firstDelivered.id}/approve`)
       .set('Authorization', `Bearer ${adminToken}`).expect(200);
 
-    await request(app.getHttpServer()).post('/api/v1/ways').set('Authorization', `Bearer ${adminToken}`)
-      .send({ riderId }).expect(201);
     const awaitingApproval = await createOrder({
       riderId, packagePrice: '18000.00', deliveryFee: '3500.00', isFeePaidToShop: true,
     });
     await request(app.getHttpServer()).post(`/api/v1/riders/me/orders/${awaitingApproval.id}/delivered`)
       .set('Authorization', `Bearer ${riderToken}`).expect(200);
-    const paidAnywayWay = await request(app.getHttpServer()).post('/api/v1/ways')
-      .set('Authorization', `Bearer ${adminToken}`).send({ riderId }).expect(201);
-    await request(app.getHttpServer()).post(`/api/v1/ways/${paidAnywayWay.body.id as string}/pay-anyway`)
-      .set('Authorization', `Bearer ${adminToken}`).send({ reason: 'E2E payout state fixture' }).expect(200);
     const pending = await createOrder({
       packagePrice: '95000.00', deliveryFee: '3500.00', estimatedDeliveryDate: shiftDate(today, -1),
     });
     const cancelled = await createOrder({ packagePrice: '1000.00', deliveryFee: '500.00' });
     await request(app.getHttpServer()).post(`/api/v1/orders/${cancelled.id}/cancel`)
       .set('Authorization', `Bearer ${adminToken}`).send({ reason: 'Test cancelled order' }).expect(200);
-    const otherRiderOrder = await createOrder({
+    await createOrder({
       riderId: secondRiderId, packagePrice: '0.00', deliveryFee: '0.00',
       isPackagePaidToShop: true, isFeePaidToShop: true,
     });
-    const otherWayId = otherRiderOrder.wayId;
 
     const shopFilter = `shopId=${shopId}`;
     const orderReport = await request(app.getHttpServer()).get(`/api/v1/reports/orders?${dates}&${shopFilter}&perPage=1`)
@@ -329,9 +320,12 @@ describe('Phase D reports and dashboards (e2e)', () => {
       .set('Authorization', `Bearer ${officerToken}`).expect(200);
     expect(payout.body.data).toHaveLength(1);
     expect(payout.body.data[0]).toMatchObject({
-      wayCount: 3, rateTotal: '1500.00', earnedCount: 1, earnedAmount: '500.00',
-      pendingApprovalCount: 1, pendingApprovalAmount: '500.00', paidAnywayCount: 1,
-      paidAnywayAmount: '500.00', overrideWayCount: 1,
+      deliveredOrderCount: 1, earnedAmount: '500.00',
+      pendingApprovalOrderCount: 1, pendingApprovalAmount: '500.00',
+    });
+    expect(payout.body.totals).toMatchObject({
+      deliveredOrderCount: 1, earnedAmount: '500.00',
+      pendingApprovalOrderCount: 1, pendingApprovalAmount: '500.00',
     });
 
     const dashboard = await request(app.getHttpServer()).get(`/api/v1/reports/office-dashboard?${dates}`)
@@ -357,10 +351,10 @@ describe('Phase D reports and dashboards (e2e)', () => {
     const riderDashboard = await request(app.getHttpServer()).get('/api/v1/riders/me/dashboard')
       .set('Authorization', `Bearer ${riderToken}`).expect(200);
     expect(riderDashboard.body).toMatchObject({
-      todayWayCount: 3, weekWayCount: 3, monthWayCount: 3, commissionEarned: '500.00',
-      commissionPending: '500.00', codToHandBack: '50500.00',
+      todayDeliveredCount: 1, weekDeliveredCount: 1, monthDeliveredCount: 1,
+      commissionEarned: '500.00', commissionPending: '500.00', codToHandBack: '50500.00',
     });
-    expect(riderDashboard.body.ordersPerWay).not.toContainEqual(expect.objectContaining({ wayId: otherWayId }));
+    expect(riderDashboard.body.ordersPerDay).toEqual([{ date: today, orderCount: 1 }]);
     expect(riderDashboard.body).not.toHaveProperty('feeIncome');
     expect(riderDashboard.body).not.toHaveProperty('partnerCost');
     await request(app.getHttpServer()).get('/api/v1/reports/orders').set('Authorization', `Bearer ${riderToken}`)

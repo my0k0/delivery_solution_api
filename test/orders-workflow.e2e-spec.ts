@@ -18,7 +18,6 @@ import { roles } from '../src/roles/roles.schema.js';
 import { shops } from '../src/shops/shop.schema.js';
 import { townships } from '../src/townships/township.schema.js';
 import { users } from '../src/users/user.schema.js';
-import { ways } from '../src/ways/way.schema.js';
 
 describe('Phase B office order workflow (e2e)', () => {
   let app: INestApplication;
@@ -118,9 +117,6 @@ describe('Phase B office order workflow (e2e)', () => {
       await database.db.delete(orderStatusHistory).where(inArray(orderStatusHistory.orderId, orderIds));
       await database.db.delete(orders).where(inArray(orders.id, orderIds));
     }
-    if (riderId || otherRiderId) {
-      await database.db.delete(ways).where(inArray(ways.riderId, [riderId, otherRiderId].filter(Boolean)));
-    }
     if (townshipIds.length > 0) await database.db.delete(townships).where(inArray(townships.id, townshipIds));
     if (partnerIds.length > 0) await database.db.delete(deliveryPartners).where(inArray(deliveryPartners.id, partnerIds));
     if (riderId || otherRiderId) {
@@ -142,7 +138,7 @@ describe('Phase B office order workflow (e2e)', () => {
     const noDefaultResponse = await request(app.getHttpServer())
       .post('/api/v1/townships')
       .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ name: `No default ${run}`, defaultDeliveryFee: '2400.00', leadTimeDays: 2 })
+      .send({ name: `No default ${run}`, defaultDeliveryFee: '2400.00', defaultCommissionFee: '400.00', leadTimeDays: 2 })
       .expect(201);
     const noDefaultTownshipId = noDefaultResponse.body.id as string;
     townshipIds.push(noDefaultTownshipId);
@@ -155,7 +151,7 @@ describe('Phase B office order workflow (e2e)', () => {
       .post('/api/v1/townships')
       .set('Authorization', `Bearer ${ownerToken}`)
       .send({
-        name: `Default rider ${run}`, defaultDeliveryFee: '3100.00', leadTimeDays: 1,
+        name: `Default rider ${run}`, defaultDeliveryFee: '3100.00', defaultCommissionFee: '450.00', leadTimeDays: 1,
         defaultAssigneeType: 'RIDER', defaultRiderId: riderId,
       })
       .expect(201);
@@ -308,7 +304,7 @@ describe('Phase B office order workflow (e2e)', () => {
     const townshipResponse = await request(app.getHttpServer())
       .post('/api/v1/townships')
       .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ name: `Edit township ${run}`, defaultDeliveryFee: '0', leadTimeDays: 0 })
+      .send({ name: `Edit township ${run}`, defaultDeliveryFee: '0', defaultCommissionFee: '0', leadTimeDays: 0 })
       .expect(201);
     const townshipId = townshipResponse.body.id as string;
     townshipIds.push(townshipId);
@@ -403,7 +399,7 @@ describe('Phase B office order workflow (e2e)', () => {
     const townshipResponse = await request(app.getHttpServer())
       .post('/api/v1/townships')
       .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ name: `No assignee default ${run}`, defaultDeliveryFee: '0', leadTimeDays: 0 })
+      .send({ name: `No assignee default ${run}`, defaultDeliveryFee: '0', defaultCommissionFee: '0', leadTimeDays: 0 })
       .expect(201);
     const townshipId = townshipResponse.body.id as string;
     townshipIds.push(townshipId);

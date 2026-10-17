@@ -117,7 +117,7 @@ export class ReportsController {
 
   @Get('rider-payout')
   @RequirePermissions('reports.read')
-  @ApiOperation({ summary: 'Get rider payout by way state' })
+  @ApiOperation({ summary: 'Get rider payout by delivered order' })
   @ApiOkResponse({ type: RiderPayoutResponseDto })
   getRiderPayout(@Query() query: RiderReportQueryDto): Promise<RiderPayoutResponseDto> {
     return this.reports.getRiderPayout(query);
@@ -131,10 +131,10 @@ export class ReportsController {
   async exportRiderPayout(@Query() query: RiderReportExportQueryDto, @Res() response: Response): Promise<void> {
     const report = await this.reports.getRiderPayout(query);
     sendExport(response, query.format, 'rider-payout', query.dateFrom, query.dateTo,
-      ['riderId', 'riderName', 'date', 'wayCount', 'rateTotal', 'earnedCount', 'earnedAmount', 'pendingApprovalCount', 'pendingApprovalAmount', 'paidAnywayCount', 'paidAnywayAmount', 'overrideWayCount'],
+      ['riderId', 'riderName', 'deliveredOrderCount', 'earnedAmount', 'pendingApprovalOrderCount', 'pendingApprovalAmount'],
       [
-        ...report.data.map((row): ExportRow => [row.riderId, row.riderName, row.date, row.wayCount, row.rateTotal, row.earnedCount, row.earnedAmount, row.pendingApprovalCount, row.pendingApprovalAmount, row.paidAnywayCount, row.paidAnywayAmount, row.overrideWayCount]),
-        ['', 'TOTAL', '', report.totals.wayCount, report.totals.rateTotal, report.totals.earnedCount, report.totals.earnedAmount, report.totals.pendingApprovalCount, report.totals.pendingApprovalAmount, report.totals.paidAnywayCount, report.totals.paidAnywayAmount, report.totals.overrideWayCount],
+        ...report.data.map((row): ExportRow => [row.riderId, row.riderName, row.deliveredOrderCount, row.earnedAmount, row.pendingApprovalOrderCount, row.pendingApprovalAmount]),
+        ['', 'TOTAL', report.totals.deliveredOrderCount, report.totals.earnedAmount, report.totals.pendingApprovalOrderCount, report.totals.pendingApprovalAmount],
       ]);
   }
 

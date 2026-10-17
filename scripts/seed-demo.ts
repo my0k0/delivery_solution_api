@@ -6,7 +6,6 @@ import type {
   AssigneeType,
   OrderStatus,
 } from '../src/orders/order.schema.js';
-import { getDateInTimeZone } from '../src/common/utils/timezone-date.util.js';
 
 config({ path: ['.env.local', '.env'], quiet: true });
 
@@ -21,7 +20,6 @@ if (!databaseUrl)
   throw new Error('DATABASE_URL is required to seed demo data.');
 
 const sql = postgres(databaseUrl);
-const wayDate = getDateInTimeZone(new Date(), process.env.APP_TIMEZONE ?? 'Asia/Yangon');
 
 const partnerDefinitions = [
   {
@@ -37,9 +35,27 @@ const partnerDefinitions = [
 ] as const;
 
 const shopDefinitions = [
-  { name: 'Demo Shop One', phone: '09222222001', address: '1 Demo Street' },
-  { name: 'Demo Shop Two', phone: '09222222002', address: '2 Demo Street' },
-  { name: 'Demo Shop Three', phone: '09222222003', address: '3 Demo Street' },
+  {
+    name: 'Demo Shop One',
+    phone: '09222222001',
+    address: '1 Demo Street',
+    channelType: 'VIBER',
+    channelName: 'demo-shop-one',
+  },
+  {
+    name: 'Demo Shop Two',
+    phone: '09222222002',
+    address: '2 Demo Street',
+    channelType: 'VIBER',
+    channelName: 'demo-shop-two',
+  },
+  {
+    name: 'Demo Shop Three',
+    phone: '09222222003',
+    address: '3 Demo Street',
+    channelType: 'VIBER',
+    channelName: 'demo-shop-three',
+  },
 ] as const;
 
 const customerDefinitions = [
@@ -569,11 +585,13 @@ async function main(): Promise<void> {
     const shopIds: string[] = [];
     for (const shop of shopDefinitions) {
       const [row] = await transaction<{ id: string }[]>`
-        insert into shops (name, phone, address)
-        values (${shop.name}, ${shop.phone}, ${shop.address})
+        insert into shops (name, phone, address, channel_type, channel_name)
+        values (${shop.name}, ${shop.phone}, ${shop.address}, ${shop.channelType}, ${shop.channelName})
         on conflict (name) do update set
           phone = excluded.phone,
           address = excluded.address,
+          channel_type = excluded.channel_type,
+          channel_name = excluded.channel_name,
           updated_at = now()
         returning id
       `;
@@ -620,24 +638,6 @@ async function main(): Promise<void> {
       riderIds.push(riderRow.id);
     }
 
-    const wayIds = new Map<string, string>();
-    const [defaultCommissionSetting] = await transaction<{ value: string }[]>`
-      select value from app_settings where key = 'commissionPerWay'
-    `;
-    for (const riderId of riderIds) {
-      const [rider] = await transaction<{ commission_per_way_override: string | null }[]>`
-        select commission_per_way_override from riders where id = ${riderId}
-      `;
-      const [way] = await transaction<{ id: string }[]>`
-        insert into ways (rider_id, way_date, commission_rate, is_open)
-        values (${riderId}, ${wayDate}, ${rider.commission_per_way_override ?? defaultCommissionSetting?.value ?? '500.00'}, true)
-        on conflict (rider_id, way_date) where is_open = true do update set
-          updated_at = now()
-        returning id
-      `;
-      wayIds.set(riderId, way.id);
-    }
-
     const customerIds: string[] = [];
     for (const customer of customerDefinitions) {
       const [existing] = await transaction<{ id: string }[]>`
@@ -664,6 +664,7 @@ async function main(): Promise<void> {
       {
         name: 'Demo Central',
         fee: '3500.00',
+        commission: '500.00',
         leadTimeDays: 1,
         assigneeType: 'RIDER',
         riderIndex: 0,
@@ -672,6 +673,7 @@ async function main(): Promise<void> {
       {
         name: 'Demo North',
         fee: '4500.00',
+        commission: '700.00',
         leadTimeDays: 2,
         assigneeType: 'PARTNER',
         riderIndex: null,
@@ -680,6 +682,7 @@ async function main(): Promise<void> {
       {
         name: 'Demo South',
         fee: '5000.00',
+        commission: '600.00',
         leadTimeDays: 3,
         assigneeType: null,
         riderIndex: null,
@@ -695,10 +698,11 @@ async function main(): Promise<void> {
           ? null
           : partnerIds[township.partnerIndex];
       const [row] = await transaction<{ id: string }[]>`
-        insert into townships (name, default_delivery_fee, lead_time_days, default_assignee_type, default_rider_id, default_partner_id)
-        values (${township.name}, ${township.fee}, ${township.leadTimeDays}, ${township.assigneeType}, ${riderId}, ${partnerId})
+        insert into townships (name, default_delivery_fee, default_commission_fee, lead_time_days, default_assignee_type, default_rider_id, default_partner_id)
+        values (${township.name}, ${township.fee}, ${township.commission}, ${township.leadTimeDays}, ${township.assigneeType}, ${riderId}, ${partnerId})
         on conflict (name) do update set
           default_delivery_fee = excluded.default_delivery_fee,
+          default_commission_fee = excluded.default_commission_fee,
           lead_time_days = excluded.lead_time_days,
           default_assignee_type = excluded.default_assignee_type,
           default_rider_id = excluded.default_rider_id,
@@ -714,7 +718,6 @@ async function main(): Promise<void> {
         order.assigneeType === 'RIDER' && order.assigneeIndex !== null
           ? riderIds[order.assigneeIndex]
           : null;
-      const wayId = riderId ? wayIds.get(riderId) ?? null : null;
       const partnerId =
         order.assigneeType === 'PARTNER' && order.assigneeIndex !== null
           ? partnerIds[order.assigneeIndex]
@@ -728,15 +731,16 @@ async function main(): Promise<void> {
         insert into orders (
           tracking_code, shop_id, customer_id, township_id, assignee_type, rider_id, partner_id,
           package_price, delivery_fee, is_package_paid_to_shop, is_fee_paid_to_shop,
-          partner_fee, estimated_delivery_date, delivered_at, way_id, delivery_address, cancel_reason, status, notes
+          partner_fee, commission_fee, estimated_delivery_date, delivered_at, delivery_address, cancel_reason, status, notes
         )
         values (
           ${order.trackingCode}, ${shopIds[order.shopIndex]}, ${customerIds[order.customerIndex]},
           ${townshipIds[order.townshipIndex]}, ${order.assigneeType}, ${riderId}, ${partnerId},
           ${order.packagePrice}, ${order.deliveryFee}, ${order.isPackagePaidToShop}, ${order.isFeePaidToShop},
           ${order.assigneeType === 'PARTNER' ? '500.00' : '0.00'},
+          ${order.assigneeType === 'RIDER' ? townshipDefinitions[order.townshipIndex].commission : '0.00'},
            current_date + ${townshipDefinitions[order.townshipIndex].leadTimeDays + ('estimatedDateOffset' in order ? order.estimatedDateOffset ?? 0 : 0)}::int,
-          ${deliveredAt}, ${wayId}, ${customerDefinitions[order.customerIndex].address},
+          ${deliveredAt}, ${customerDefinitions[order.customerIndex].address},
           ${order.status === 'CANCELLED' ? 'Demo cancellation' : null}, ${order.status}, ${order.notes}
         )
         on conflict (tracking_code) do update set
@@ -751,9 +755,9 @@ async function main(): Promise<void> {
           is_package_paid_to_shop = excluded.is_package_paid_to_shop,
           is_fee_paid_to_shop = excluded.is_fee_paid_to_shop,
           partner_fee = excluded.partner_fee,
+          commission_fee = excluded.commission_fee,
            estimated_delivery_date = excluded.estimated_delivery_date,
           delivered_at = excluded.delivered_at,
-          way_id = excluded.way_id,
           delivery_address = excluded.delivery_address,
           cancel_reason = excluded.cancel_reason,
           status = excluded.status,

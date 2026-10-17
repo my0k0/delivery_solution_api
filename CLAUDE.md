@@ -6,7 +6,7 @@ Guidance for Claude Code and coding agents working in this repository.
 
 NestJS 12 (Express) + TypeScript API for one delivery company's operations. PostgreSQL 18/Drizzle, Redis, Swagger, Vitest; single pnpm package using ESM under `nodenext`. Only commit or push when explicitly asked.
 
-Foundation, Phase 1 (Users/Auth/RBAC), and Phase 2 (master data) are complete. Phases 3–5 are superseded by `docs/delivery-workflow-v2.md`; workflow v2 phases A–E are complete: schema/state/RBAC, office orders and approval, ways/commission, reports/dashboards, and shop portal. Phase 6 (returns/payment ledger/reconciliation) remains blocked; Phase 7 (notifications/Viber) is later; Phase 8 reports are partly delivered by phases D/E and need further scope for any additional slices. See `README.md`, `PLAN.md`, and the workflow document's As built section.
+Foundation, Phase 1 (Users/Auth/RBAC), and Phase 2 (master data) are complete. Phases 3–5 are superseded by `docs/delivery-workflow-v2.md`; workflow v2 phases A–E are complete: schema/state/RBAC, office orders and approval, per-order commission, reports/dashboards, and shop portal. Phase 6 (returns/payment ledger/reconciliation) remains blocked; Phase 7 (notifications/Viber) is later; Phase 8 reports are partly delivered by phases D/E and need further scope for any additional slices. See `README.md`, `PLAN.md`, and the workflow document's As built section.
 
 ## Skills — invoke before task-specific code
 
@@ -85,18 +85,18 @@ Demo login emails created by `pnpm db:seed:demo`: `rider1@demo.delivery.local`, 
 - `src/main.ts` / `src/setup-app.ts`: `/api` prefix, URI version `v1`, validation pipe, CORS, Swagger. OpenAPI is generated at `/api/v1/docs-json` and is the canonical frontend contract.
 - `src/app.module.ts` registers global guards in order: `JwtAuthGuard`, then `PermissionsGuard`.
 - Shared code: `src/common/auth/`, `src/common/database/`, `src/common/health/`, `src/common/utils/`, and `src/config/`.
-- Registered feature modules: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners`, `ways`, `reports`, and `shop-portal`. `delivery-partners` uses the permission module name `partners`.
+- Registered feature modules: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners`, `reports`, and `shop-portal`. `delivery-partners` uses the permission module name `partners`.
 - Feature schemas live with their module. Re-export every new table from `src/common/database/schema.ts`; that is the central schema entry used by Drizzle Kit.
 
 ## RBAC
 
-The catalog in `src/common/auth/permission-keys.ts` is fixed and seeded: **14 modules / 69 keys**. Modules: `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `ways`, `shop-portal`, `shop-reports`, `reports`. The catalog has read-only API access; role grant sets are replaceable with `permissions.update`, but keys cannot be created/deleted at runtime.
+The catalog in `src/common/auth/permission-keys.ts` is fixed and seeded: **13 modules / 42 keys**. Modules: `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`. The catalog has read-only API access; role grant sets are replaceable with `permissions.update`, but keys cannot be created/deleted at runtime.
 
 Seeded roles and grants from `scripts/seed.ts`:
 
 - `OWNER`: `is_system=true`; effective grant is the entire catalog, with no grant rows required.
 - `ADMIN`: all catalog keys.
-- `OFFICER`: `orders.create/read/update/cancel/update_costs/update_after_approval`; `deliveries.read/update/approve`; `townships.read/create/update/delete`; `partners.read/create/update/delete`; `ways.create/read/update`; `reports.read/export`.
+- `OFFICER`: `orders.create/read/update/cancel/update_after_approval`; `deliveries.read/update/approve`; `townships.read/create/update/delete`; `partners.read/create/update/delete`; `reports.read/export`.
 - `RIDER`: `deliveries.read`, `deliveries.update`.
 - `SHOP`: `shop-portal.read`, `shop-reports.export`.
 

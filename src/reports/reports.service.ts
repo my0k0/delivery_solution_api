@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, asc, count, eq, exists, gte, ilike, inArray, lte, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, asc, count, eq, exists, ilike, inArray, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { DatabaseService } from '../common/database/database.service.js';
 import { escapeLikeWildcards } from '../common/utils/normalize.util.js';
 import { customers } from '../customers/customer.schema.js';
@@ -12,8 +12,6 @@ import { roles } from '../roles/roles.schema.js';
 import { shops } from '../shops/shop.schema.js';
 import { townships } from '../townships/township.schema.js';
 import { users } from '../users/user.schema.js';
-import { ways } from '../ways/way.schema.js';
-import { deriveWayFinancialState } from '../ways/way-state.util.js';
 import { codToCollectSql, netOwedToShopSql } from './report-money.util.js';
 import type { DateRangeQueryDto, OrderReportQueryDto, OrderReportExportQueryDto, ReportDateBasis } from './dto/report-query.dto.js';
 import type {
@@ -69,8 +67,8 @@ function whereCondition(conditions: SQL[]): SQL {
   return and(...conditions) ?? sql`true`;
 }
 
-function wayIdsCondition(ids: readonly string[]): SQL {
-  return ids.length ? inArray(ways.id, [...ids]) : sql`false`;
+function moneyAdd(first: string, second: string): string {
+  return (Number(first) + Number(second)).toFixed(2);
 }
 
 @Injectable()
@@ -214,84 +212,80 @@ export class ReportsService {
 
   async getRiderPayout(query: DateRangeQueryDto & { riderId?: string }): Promise<RiderPayoutResponseDto> {
     validateDateRange(query);
-    const conditions: SQL[] = [gte(ways.wayDate, query.dateFrom), lte(ways.wayDate, query.dateTo)];
-    if (query.riderId) conditions.push(eq(ways.riderId, query.riderId));
-    const wayRows = await this.database.db.select({
-      wayId: ways.id,
-      riderId: riders.id,
-      riderName: users.name,
-      date: ways.wayDate,
-      rate: ways.commissionRate,
-      isPaidWithoutDelivery: ways.isPaidWithoutDelivery,
-      orderCount: sql<number>`count(${orders.id})`,
-      deliveredCount: sql<number>`count(${orders.id}) filter (where ${orders.status} = 'DELIVERED')`,
-    }).from(ways).innerJoin(riders, eq(ways.riderId, riders.id))
-      .innerJoin(users, eq(riders.userId, users.id))
-      .leftJoin(orders, eq(orders.wayId, ways.id)).where(and(...conditions))
-      .groupBy(ways.id, riders.id, users.name).orderBy(asc(ways.wayDate), asc(users.name));
-
-    const stateByWayId = new Map<string, ReturnType<typeof deriveWayFinancialState>['state']>();
-    for (const row of wayRows) {
-      const financialState = deriveWayFinancialState(Number(row.orderCount), Number(row.deliveredCount), row.isPaidWithoutDelivery, row.rate);
-      stateByWayId.set(row.wayId, financialState.state);
-    }
-    const earnedWayIds = [...stateByWayId].filter(([, state]) => state === 'EARNED').map(([id]) => id);
-    const pendingWayIds = [...stateByWayId].filter(([, state]) => state === 'PENDING_APPROVAL').map(([id]) => id);
-    const paidAnywayWayIds = [...stateByWayId].filter(([, state]) => state === 'PAID_ANYWAY').map(([id]) => id);
-    const earnedCondition = wayIdsCondition(earnedWayIds);
-    const pendingCondition = wayIdsCondition(pendingWayIds);
-    const paidAnywayCondition = wayIdsCondition(paidAnywayWayIds);
-    const [groupedRows, [totals]] = await Promise.all([
+    const riderCondition: SQL[] = query.riderId ? [eq(riders.id, query.riderId)] : [];
+    const [earnedRows, pendingRows] = await Promise.all([
       this.database.db.select({
         riderId: riders.id,
         riderName: users.name,
-        date: ways.wayDate,
-        wayCount: sql<number>`count(*)`,
-        rateTotal: sql<string>`coalesce(sum(${ways.commissionRate}), 0)::numeric(14, 2)::text`,
-        earnedCount: sql<number>`count(*) filter (where ${earnedCondition})`,
-        earnedAmount: sql<string>`coalesce(sum(case when ${earnedCondition} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-        pendingApprovalCount: sql<number>`count(*) filter (where ${pendingCondition})`,
-        pendingApprovalAmount: sql<string>`coalesce(sum(case when ${pendingCondition} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-        paidAnywayCount: sql<number>`count(*) filter (where ${paidAnywayCondition})`,
-        paidAnywayAmount: sql<string>`coalesce(sum(case when ${paidAnywayCondition} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-        overrideWayCount: sql<number>`count(*) filter (where ${paidAnywayCondition})`,
-      }).from(ways).innerJoin(riders, eq(ways.riderId, riders.id))
-        .innerJoin(users, eq(riders.userId, users.id)).where(and(...conditions))
-        .groupBy(riders.id, users.name, ways.wayDate).orderBy(asc(ways.wayDate), asc(users.name)),
+        deliveredOrderCount: count(),
+        earnedAmount: sql<string>`coalesce(sum(${orders.commissionFee}), 0)::numeric(14, 2)::text`,
+      }).from(orders)
+        .innerJoin(riders, eq(orders.riderId, riders.id))
+        .innerJoin(users, eq(riders.userId, users.id))
+        .where(and(
+          eq(orders.assigneeType, 'RIDER'),
+          eq(orders.status, 'DELIVERED'),
+          sql`${orders.deliveredAt} is not null`,
+          ...dateRangeConditions(sql`${orders.deliveredAt}`, query.dateFrom, query.dateTo, this.timeZone),
+          ...riderCondition,
+        ))
+        .groupBy(riders.id, users.name),
       this.database.db.select({
-        wayCount: sql<number>`count(*)`,
-        rateTotal: sql<string>`coalesce(sum(${ways.commissionRate}), 0)::numeric(14, 2)::text`,
-        earnedCount: sql<number>`count(*) filter (where ${earnedCondition})`,
-        earnedAmount: sql<string>`coalesce(sum(case when ${earnedCondition} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-        pendingApprovalCount: sql<number>`count(*) filter (where ${pendingCondition})`,
-        pendingApprovalAmount: sql<string>`coalesce(sum(case when ${pendingCondition} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-        paidAnywayCount: sql<number>`count(*) filter (where ${paidAnywayCondition})`,
-        paidAnywayAmount: sql<string>`coalesce(sum(case when ${paidAnywayCondition} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-        overrideWayCount: sql<number>`count(*) filter (where ${paidAnywayCondition})`,
-      }).from(ways).where(and(...conditions)),
+        riderId: riders.id,
+        riderName: users.name,
+        pendingApprovalOrderCount: count(),
+        pendingApprovalAmount: sql<string>`coalesce(sum(${orders.commissionFee}), 0)::numeric(14, 2)::text`,
+      }).from(orders)
+        .innerJoin(riders, eq(orders.riderId, riders.id))
+        .innerJoin(users, eq(riders.userId, users.id))
+        .where(and(
+          eq(orders.assigneeType, 'RIDER'),
+          eq(orders.status, 'AWAITING_APPROVAL'),
+          ...dateRangeConditions(sql`${orders.createdAt}`, query.dateFrom, query.dateTo, this.timeZone),
+          ...riderCondition,
+        ))
+        .groupBy(riders.id, users.name),
     ]);
-    const data: RiderPayoutRowDto[] = groupedRows.map((row) => ({
-      ...row,
-      wayCount: Number(row.wayCount),
-      earnedCount: Number(row.earnedCount),
-      pendingApprovalCount: Number(row.pendingApprovalCount),
-      paidAnywayCount: Number(row.paidAnywayCount),
-      overrideWayCount: Number(row.overrideWayCount),
-    }));
-    return {
-      data,
-      totals: {
-        wayCount: Number(totals?.wayCount ?? 0),
-        rateTotal: totals?.rateTotal ?? ZERO_MONEY,
-        earnedCount: Number(totals?.earnedCount ?? 0),
-        earnedAmount: totals?.earnedAmount ?? ZERO_MONEY,
-        pendingApprovalCount: Number(totals?.pendingApprovalCount ?? 0),
-        pendingApprovalAmount: totals?.pendingApprovalAmount ?? ZERO_MONEY,
-        paidAnywayCount: Number(totals?.paidAnywayCount ?? 0),
-        paidAnywayAmount: totals?.paidAnywayAmount ?? ZERO_MONEY,
-        overrideWayCount: Number(totals?.overrideWayCount ?? 0),
-      },
-    };
+
+    const byRider = new Map<string, RiderPayoutRowDto>();
+    for (const row of earnedRows) {
+      byRider.set(row.riderId, {
+        riderId: row.riderId,
+        riderName: row.riderName,
+        deliveredOrderCount: Number(row.deliveredOrderCount),
+        earnedAmount: row.earnedAmount,
+        pendingApprovalOrderCount: 0,
+        pendingApprovalAmount: ZERO_MONEY,
+      });
+    }
+    for (const row of pendingRows) {
+      const existing = byRider.get(row.riderId);
+      if (existing) {
+        existing.pendingApprovalOrderCount = Number(row.pendingApprovalOrderCount);
+        existing.pendingApprovalAmount = row.pendingApprovalAmount;
+      } else {
+        byRider.set(row.riderId, {
+          riderId: row.riderId,
+          riderName: row.riderName,
+          deliveredOrderCount: 0,
+          earnedAmount: ZERO_MONEY,
+          pendingApprovalOrderCount: Number(row.pendingApprovalOrderCount),
+          pendingApprovalAmount: row.pendingApprovalAmount,
+        });
+      }
+    }
+
+    const data = [...byRider.values()].sort((first, second) => first.riderName.localeCompare(second.riderName));
+    const totals = data.reduce(
+      (accumulator, row) => ({
+        deliveredOrderCount: accumulator.deliveredOrderCount + row.deliveredOrderCount,
+        earnedAmount: moneyAdd(accumulator.earnedAmount, row.earnedAmount),
+        pendingApprovalOrderCount: accumulator.pendingApprovalOrderCount + row.pendingApprovalOrderCount,
+        pendingApprovalAmount: moneyAdd(accumulator.pendingApprovalAmount, row.pendingApprovalAmount),
+      }),
+      { deliveredOrderCount: 0, earnedAmount: ZERO_MONEY, pendingApprovalOrderCount: 0, pendingApprovalAmount: ZERO_MONEY },
+    );
+    return { data, totals };
   }
 
   async getOfficeDashboard(query: DateRangeQueryDto): Promise<OfficeDashboardResponseDto> {
@@ -401,30 +395,23 @@ export class ReportsService {
     const monthFrom = `${today.slice(0, 7)}-01`;
     const weekDay = new Date(`${today}T00:00:00.000Z`).getUTCDay();
     const weekFrom = dateShift(today, -(weekDay === 0 ? 6 : weekDay - 1));
-    const riderWays = await this.database.db.select({
-      id: ways.id,
-      wayDate: ways.wayDate,
-      commissionRate: ways.commissionRate,
-      isPaidWithoutDelivery: ways.isPaidWithoutDelivery,
-      orderCount: sql<number>`count(${orders.id})`,
-      deliveredCount: sql<number>`count(${orders.id}) filter (where ${orders.status} = 'DELIVERED')`,
-    }).from(ways).leftJoin(orders, eq(orders.wayId, ways.id))
-      .where(and(eq(ways.riderId, rider.id), gte(ways.wayDate, monthFrom), lte(ways.wayDate, today)))
-      .groupBy(ways.id).orderBy(asc(ways.wayDate));
-    const stateByWayId = new Map<string, ReturnType<typeof deriveWayFinancialState>['state']>();
-    for (const way of riderWays) {
-      const state = deriveWayFinancialState(Number(way.orderCount), Number(way.deliveredCount), way.isPaidWithoutDelivery, way.commissionRate);
-      stateByWayId.set(way.id, state.state);
-    }
-    const earnedWayIds = [...stateByWayId].filter(([, state]) => state === 'EARNED').map(([id]) => id);
-    const pendingWayIds = [...stateByWayId].filter(([, state]) => state === 'PENDING_APPROVAL').map(([id]) => id);
-    const [commissionTotals] = await this.database.db.select({
-      commissionEarned: sql<string>`coalesce(sum(case when ${wayIdsCondition(earnedWayIds)} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-      commissionPending: sql<string>`coalesce(sum(case when ${wayIdsCondition(pendingWayIds)} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-    }).from(ways).where(and(
-      eq(ways.riderId, rider.id),
-      gte(ways.wayDate, monthFrom),
-      lte(ways.wayDate, today),
+    const riderDeliveredByDay = await this.database.db.select({
+      date: sql<string>`to_char((${orders.deliveredAt} at time zone ${this.timeZone})::date, 'YYYY-MM-DD')`,
+      deliveredCount: count(),
+      commission: sql<string>`coalesce(sum(${orders.commissionFee}), 0)::numeric(14, 2)::text`,
+    }).from(orders).where(and(
+      eq(orders.riderId, rider.id),
+      eq(orders.assigneeType, 'RIDER'),
+      eq(orders.status, 'DELIVERED'),
+      sql`${orders.deliveredAt} is not null`,
+      ...dateRangeConditions(sql`${orders.deliveredAt}`, monthFrom, today, this.timeZone),
+    )).groupBy(sql`1`).orderBy(sql`1`);
+    const [pendingCommission] = await this.database.db.select({
+      commissionPending: sql<string>`coalesce(sum(${orders.commissionFee}), 0)::numeric(14, 2)::text`,
+    }).from(orders).where(and(
+      eq(orders.riderId, rider.id),
+      eq(orders.assigneeType, 'RIDER'),
+      eq(orders.status, 'AWAITING_APPROVAL'),
     ));
     const deliveredCod = await this.database.db.select({
       amount: sql<string>`coalesce(sum(${codToCollectSql(orders)}), 0)::numeric(14, 2)::text`,
@@ -433,14 +420,19 @@ export class ReportsService {
       eq(orders.status, 'DELIVERED'),
       ...dateRangeConditions(sql`${orders.deliveredAt}`, today, today, this.timeZone),
     ));
+    const deliveredCountFrom = (from: string): number => riderDeliveredByDay
+      .filter((row) => row.date >= from)
+      .reduce((total, row) => total + Number(row.deliveredCount), 0);
+    const commissionEarned = riderDeliveredByDay
+      .reduce((total, row) => moneyAdd(total, row.commission), ZERO_MONEY);
     return {
       today,
-      todayWayCount: riderWays.filter((way) => way.wayDate === today).length,
-      weekWayCount: riderWays.filter((way) => way.wayDate >= weekFrom).length,
-      monthWayCount: riderWays.length,
-      commissionEarned: commissionTotals?.commissionEarned ?? ZERO_MONEY,
-      commissionPending: commissionTotals?.commissionPending ?? ZERO_MONEY,
-      ordersPerWay: riderWays.map((way) => ({ wayId: way.id, date: way.wayDate, orderCount: Number(way.orderCount) })),
+      todayDeliveredCount: deliveredCountFrom(today),
+      weekDeliveredCount: deliveredCountFrom(weekFrom),
+      monthDeliveredCount: deliveredCountFrom(monthFrom),
+      commissionEarned,
+      commissionPending: pendingCommission?.commissionPending ?? ZERO_MONEY,
+      ordersPerDay: riderDeliveredByDay.map((row) => ({ date: row.date, orderCount: Number(row.deliveredCount) })),
       codToHandBack: deliveredCod[0]?.amount ?? ZERO_MONEY,
     };
   }
@@ -523,30 +515,14 @@ export class ReportsService {
   }
 
   private async earnedCommissionByDate(dateFrom: string, dateTo: string): Promise<Map<string, string>> {
-    const wayRows = await this.database.db.select({
-      wayId: ways.id,
-      wayDate: ways.wayDate,
-      rate: ways.commissionRate,
-      isPaidWithoutDelivery: ways.isPaidWithoutDelivery,
-      orderCount: sql<number>`count(${orders.id})`,
-      deliveredCount: sql<number>`count(${orders.id}) filter (where ${orders.status} = 'DELIVERED')`,
-    }).from(ways).leftJoin(orders, eq(orders.wayId, ways.id))
-      .where(and(gte(ways.wayDate, dateFrom), lte(ways.wayDate, dateTo)))
-      .groupBy(ways.id).orderBy(asc(ways.wayDate));
-    const earnedWayIds: string[] = [];
-    for (const way of wayRows) {
-      const state = deriveWayFinancialState(Number(way.orderCount), Number(way.deliveredCount), way.isPaidWithoutDelivery, way.rate);
-      if (state.state === 'EARNED') earnedWayIds.push(way.wayId);
-    }
-    const earnedCondition = wayIdsCondition(earnedWayIds);
     const dailyTotals = await this.database.db.select({
-      date: ways.wayDate,
-      amount: sql<string>`coalesce(sum(case when ${earnedCondition} then ${ways.commissionRate} else 0::numeric end), 0)::numeric(14, 2)::text`,
-    }).from(ways).where(and(
-      gte(ways.wayDate, dateFrom),
-      lte(ways.wayDate, dateTo),
-      earnedCondition,
-    )).groupBy(ways.wayDate).orderBy(asc(ways.wayDate));
+      date: sql<string>`to_char((${orders.deliveredAt} at time zone ${this.timeZone})::date, 'YYYY-MM-DD')`,
+      amount: sql<string>`coalesce(sum(${orders.commissionFee}), 0)::numeric(14, 2)::text`,
+    }).from(orders).where(and(
+      eq(orders.status, 'DELIVERED'),
+      sql`${orders.deliveredAt} is not null`,
+      ...dateRangeConditions(sql`${orders.deliveredAt}`, dateFrom, dateTo, this.timeZone),
+    )).groupBy(sql`1`).orderBy(sql`1`);
     return new Map(dailyTotals.map((row) => [row.date, row.amount]));
   }
 }

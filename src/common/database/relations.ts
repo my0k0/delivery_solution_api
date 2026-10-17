@@ -11,7 +11,6 @@ import { roles } from '../../roles/roles.schema.js';
 import { shops } from '../../shops/shop.schema.js';
 import { townships } from '../../townships/township.schema.js';
 import { users } from '../../users/user.schema.js';
-import { ways } from '../../ways/way.schema.js';
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   role: one(roles, {
@@ -24,7 +23,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   }),
   orderStatusHistories: many(orderStatusHistory),
   orderFieldAudits: many(orderFieldAudit),
-  waysPaidWithoutDelivery: many(ways),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -63,7 +61,6 @@ export const ridersRelations = relations(riders, ({ one, many }) => ({
   user: one(users, { fields: [riders.userId], references: [users.id] }),
   orders: many(orders),
   defaultTownships: many(townships),
-  ways: many(ways),
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
@@ -81,7 +78,6 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
     fields: [orders.partnerId],
     references: [deliveryPartners.id],
   }),
-  way: one(ways, { fields: [orders.wayId], references: [ways.id] }),
   history: many(orderStatusHistory),
   fieldAudit: many(orderFieldAudit),
 }));
@@ -133,12 +129,3 @@ export const deliveryPartnersRelations = relations(
     orders: many(orders),
   }),
 );
-
-export const waysRelations = relations(ways, ({ one, many }) => ({
-  rider: one(riders, { fields: [ways.riderId], references: [riders.id] }),
-  paidWithoutDeliveryBy: one(users, {
-    fields: [ways.payAnywayBy],
-    references: [users.id],
-  }),
-  orders: many(orders),
-}));
