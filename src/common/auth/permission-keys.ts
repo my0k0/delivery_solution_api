@@ -49,9 +49,6 @@ export const MODULE_ACTIONS = {
   ],
   'shop-portal': ['read'],
   'shop-reports': ['export'],
-  returns: ['create', 'read', 'update', 'delete', 'export', 'import'],
-  payments: ['create', 'read', 'update', 'delete', 'export', 'import'],
-  notifications: ['create', 'read', 'update', 'delete', 'export', 'import'],
   reports: ['read', 'export'],
 } as const satisfies Record<string, readonly string[]>;
 
