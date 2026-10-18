@@ -78,7 +78,7 @@ The real order states are `PENDING`, `ASSIGNED`, `AWAITING_APPROVAL`, `DELIVERED
 - Riders can submit an assigned order as delivered. It becomes `AWAITING_APPROVAL`; an officer approves it to `DELIVERED` or sends it back to `ASSIGNED` with a shop-visible reason and optional internal note.
 - An officer can mark a partner order delivered directly. Partner orders do not belong to a way and do not earn rider commission.
 - Officers can postpone an order (clear assignee to `PENDING`) or cancel it from `PENDING` or `ASSIGNED` with a required reason — cancelling covers both a called-off delivery and a package that came back to the shop. Cancelled orders are terminal.
-- Order edits are audited field-by-field. Cost changes require `orders.update`; cost changes after delivery approval also require `orders.update_after_approval` and a reason.
+- Order edits are audited field-by-field and require `orders.update`. An order that has ended (`DELIVERED`, `CANCELLED`) cannot be edited at all, so there are no post-approval money edits; the shop advance on a delivered order still needs `orders.update_after_approval` and a reason.
 
 ### Ways, commission, and order money
 

@@ -46,6 +46,20 @@ describe('OrderStateService', () => {
     service = moduleReference.get(OrderStateService);
   });
 
+  it('treats a status with no transition out of it as terminal', () => {
+    for (const status of ORDER_STATUSES) {
+      expect(service.isTerminalStatus(status)).toBe(
+        EXPECTED_TRANSITIONS[status].length === 0,
+      );
+    }
+
+    // Named explicitly: the order-edit guard hangs off this, so "ended" must not
+    // silently become editable if the matrix is ever relaxed.
+    expect(service.isTerminalStatus('DELIVERED')).toBe(true);
+    expect(service.isTerminalStatus('CANCELLED')).toBe(true);
+    expect(service.isTerminalStatus('AWAITING_APPROVAL')).toBe(false);
+  });
+
   it('exposes exactly the approved status set and transition matrix', () => {
     expect(ORDER_STATUSES).toEqual([
       'PENDING',

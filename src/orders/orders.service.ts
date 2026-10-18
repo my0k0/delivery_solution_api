@@ -489,8 +489,14 @@ export class OrdersService {
     throw new ConflictException('Could not allocate a unique tracking code; retry the request');
   }
 
-  async update(id: string, input: UpdateOrderDto, actorId: string, roleId: string): Promise<OrderResponseDto> {
+  async update(id: string, input: UpdateOrderDto, actorId: string): Promise<OrderResponseDto> {
     const existing = await this.orderOrThrow(id);
+    // `DELIVERED` and `CANCELLED` have no transition out of them: the order has
+    // ended, so it is immutable rather than merely hard to change. The shop
+    // advance is not an edit and stays available through its own endpoints.
+    if (this.orderState.isTerminalStatus(existing.status)) {
+      throw new ConflictException(`Order '${id}' is '${existing.status}' and can no longer be edited`);
+    }
     const changes: OrderChanges = {};
     const candidateFields: Partial<Record<keyof OrderChanges, unknown>> = {
       ...(input.shopId !== undefined && { shopId: input.shopId }),
@@ -553,20 +559,6 @@ export class OrdersService {
       (changes as Record<string, unknown>)[field] = value;
     }
 
-    const changedMoneyFields = changedCandidate.filter(([field]) =>
-      (MONEY_FIELDS as readonly string[]).includes(field),
-    );
-    let effectivePermissions: string[] = [];
-    if (changedMoneyFields.length > 0) {
-      effectivePermissions = await this.permissions.getEffectivePermissions(roleId);
-      if (existing.status === 'DELIVERED') {
-        if (!effectivePermissions.includes('orders.update_after_approval')) {
-          throw new ForbiddenException('Changing costs after approval requires orders.update_after_approval');
-        }
-        if (!input.reason?.trim()) throw new BadRequestException('A reason is required when changing costs after approval');
-      }
-    }
-
     if (changes.shopId) await this.assertShopExists(changes.shopId);
     if (changes.customerId) await this.assertCustomerExists(changes.customerId);
     const updated = await this.database.db.transaction(async (transaction) => {
@@ -574,12 +566,6 @@ export class OrdersService {
       if (!current) throw new NotFoundException(`Order '${id}' not found`);
       if (current.updatedAt.getTime() !== existing.updatedAt.getTime()) {
         throw new ConflictException('Order changed while this edit was being prepared; reload and retry');
-      }
-      if (current.status === 'DELIVERED' && changedMoneyFields.length > 0) {
-        if (!effectivePermissions.includes('orders.update_after_approval')) {
-          throw new ForbiddenException('Changing costs after approval requires orders.update_after_approval');
-        }
-        if (!input.reason?.trim()) throw new BadRequestException('A reason is required when changing costs after approval');
       }
       const previousAssignee = toAssigneeSnapshot(current);
       const newAssignment: AssigneeSelection = assignmentChanged

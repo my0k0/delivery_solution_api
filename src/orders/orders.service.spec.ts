@@ -97,6 +97,7 @@ describe('OrdersService', () => {
   const orderState = {
     applyTransitionInTransaction: vi.fn(),
     recordInitialStateInTransaction: vi.fn(),
+    isTerminalStatus: vi.fn(),
   };
   const permissions = { getEffectivePermissions: vi.fn().mockResolvedValue([]) };
 
@@ -533,7 +534,7 @@ describe('OrdersService', () => {
     queryTownships.findFirst.mockResolvedValue({ id: townshipId, leadTimeDays: 0 });
     queryRiders.findFirst.mockResolvedValue({ id: riderId });
 
-    const result = await service.update(current.id, { townshipId, riderId }, 'actor-1', 'role-1');
+    const result = await service.update(current.id, { townshipId, riderId }, 'actor-1');
 
     expect(result.status).toBe('ASSIGNED');
     expect(result.riderId).toBe(riderId);
@@ -557,7 +558,7 @@ describe('OrdersService', () => {
     vi.setSystemTime(new Date('2026-10-16T17:00:00.000Z'));
 
     try {
-      const result = await service.update(current.id, { townshipId }, 'actor-1', 'role-1');
+      const result = await service.update(current.id, { townshipId }, 'actor-1');
       expect(result.estimatedDeliveryDate).toBe('2026-10-18');
     } finally {
       vi.useRealTimers();
@@ -571,7 +572,7 @@ describe('OrdersService', () => {
     const { auditValues } = prepareUpdateTransaction(current);
     queryRiders.findFirst.mockResolvedValue({ id: newRiderId });
 
-    const result = await service.update(current.id, { riderId: newRiderId }, 'actor-1', 'role-1');
+    const result = await service.update(current.id, { riderId: newRiderId }, 'actor-1');
 
     expect(result).toMatchObject({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId: newRiderId, partnerId: null });
     expect(orderState.applyTransitionInTransaction).toHaveBeenCalledWith(
@@ -607,7 +608,7 @@ describe('OrdersService', () => {
     if (lookup === 'rider') queryRiders.findFirst.mockResolvedValue({ id: input.riderId });
     else queryDeliveryPartners.findFirst.mockResolvedValue({ id: input.partnerId, isActive: true });
 
-    const response = await service.update(current.id, input, 'actor-1', 'role-1');
+    const response = await service.update(current.id, input, 'actor-1');
 
     expect(response).toMatchObject({ status: 'ASSIGNED', ...result });
   });
@@ -624,7 +625,7 @@ describe('OrdersService', () => {
     prepareUpdateTransaction(current);
     queryDeliveryPartners.findFirst.mockResolvedValue({ id: partnerId, isActive: true });
 
-    const result = await service.update(current.id, { partnerId }, 'actor-1', 'role-1');
+    const result = await service.update(current.id, { partnerId }, 'actor-1');
 
     expect(result).toMatchObject({ assigneeType: 'PARTNER', partnerId, commissionFee: '0' });
   });
@@ -633,7 +634,7 @@ describe('OrdersService', () => {
     const current = baseOrder({ assigneeType: 'RIDER', riderId: '66666666-6666-4666-8666-666666666666', status: 'ASSIGNED' });
     prepareUpdateTransaction(current);
 
-    const result = await service.update(current.id, { riderId: null }, 'actor-1', 'role-1');
+    const result = await service.update(current.id, { riderId: null }, 'actor-1');
 
     expect(result).toMatchObject({ status: 'PENDING', assigneeType: null, riderId: null, partnerId: null });
   });
@@ -643,11 +644,23 @@ describe('OrdersService', () => {
     const current = baseOrder({ assigneeType: 'RIDER', riderId, status: 'ASSIGNED' });
     const { auditValues } = prepareUpdateTransaction(current);
 
-    const result = await service.update(current.id, { notes: 'Updated note' }, 'actor-1', 'role-1');
+    const result = await service.update(current.id, { notes: 'Updated note' }, 'actor-1');
 
     expect(result).toMatchObject({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId, notes: 'Updated note' });
     expect(orderState.applyTransitionInTransaction).not.toHaveBeenCalled();
     expect(auditValues).toHaveBeenCalledWith([expect.objectContaining({ field: 'notes' })]);
+  });
+
+  it('refuses to edit an order that has ended', async () => {
+    const current = baseOrder({ status: 'DELIVERED' });
+    db.select.mockReturnValueOnce(queryChain([current]));
+    orderState.isTerminalStatus.mockReturnValueOnce(true);
+
+    await expect(
+      service.update(current.id, { notes: 'Updated note' }, 'actor-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(orderState.isTerminalStatus).toHaveBeenCalledWith('DELIVERED');
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   describe('shop advance', () => {

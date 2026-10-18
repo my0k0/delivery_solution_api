@@ -104,7 +104,7 @@ Every route requires a JWT unless `@Public()`. Protected routes need explicit `@
 
 ## Conventions
 
-- `OrderStateService` owns all order state transitions and status-history writes. Order creation sets its initial status in the same transaction as `recordInitialStateInTransaction`; ordinary edits must not write status, and all subsequent transitions go through `OrderStateService`.
+- `OrderStateService` owns all order state transitions and status-history writes. Order creation sets its initial status in the same transaction as `recordInitialStateInTransaction`; ordinary edits must not write status, and all subsequent transitions go through `OrderStateService`. A status with no transition out of it (`DELIVERED`, `CANCELLED`) has **ended**: `PATCH /orders/:id` refuses it with 409, and the check comes from `orderState.isTerminalStatus()` rather than a second hard-coded list. The shop advance is a settlement rather than an edit, so it stays available on a delivered order (requiring `orders.update_after_approval` and a reason).
 - Money is SQL `numeric` and decimal strings at TypeScript/API boundaries; never use JavaScript floats for money.
 - Business-day boundaries and date grouping always use `APP_TIMEZONE`.
 - Shop-portal responses use dedicated DTOs. The shop scope always comes from the authenticated user's `shopId`, never a client-supplied shop id.

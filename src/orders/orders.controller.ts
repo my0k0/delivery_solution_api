@@ -183,7 +183,7 @@ export class OrdersController {
     @Body() input: UpdateOrderDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<OrderResponseDto> {
-    return this.ordersService.update(id, input, currentUser.id, currentUser.roleId);
+    return this.ordersService.update(id, input, currentUser.id);
   }
 
   @Get(':id')

@@ -58,7 +58,7 @@ State machine (`OrderStateService`, hard-coded matrix, exhaustive unit tests):
 PENDING            → ASSIGNED, CANCELLED
 ASSIGNED           → PENDING (clear assignee / postpone), ASSIGNED (re-assign, history row), AWAITING_APPROVAL, CANCELLED
 AWAITING_APPROVAL  → DELIVERED (approve), ASSIGNED (send back)
-DELIVERED, CANCELLED → terminal
+DELIVERED, CANCELLED → terminal (and immutable: no transition out, and no edit in — §4)
 ```
 
 Partner orders: officer marks delivered directly `ASSIGNED → DELIVERED` (acts as approval, sets `deliveredAt`). Partner orders never carry a rider commission — the API forces `commissionFee` to `'0'` whenever the effective assignee type is `PARTNER`.
@@ -72,7 +72,7 @@ Decimal strings / SQL `numeric`, never JS floats. P = `packagePrice`, F = `deliv
 - Company fee income = F. Margin = F − partnerFee − rider commission.
 - Money counts as received only after approval (`DELIVERED`).
 - Estimated date = order date (or `availableFrom`) + township `leadTimeDays`; overridable and audited; derived "Delayed" badge.
-- Editing money fields requires `orders.update`; editing them after approval requires `orders.update_after_approval` and a reason. (`orders.update_costs` was **removed 2026-10-18**; money editing folded into `orders.update`.)
+- Editing any field requires `orders.update`. An order that has **ended** (`DELIVERED`, `CANCELLED`) cannot be edited at all: `PATCH /orders/:id` answers 409, so there are no post-approval money edits. The shop advance is a settlement rather than an edit, and changing one on a `DELIVERED` order still requires `orders.update_after_approval` **and** a reason (§1). (`orders.update_costs` was **removed 2026-10-18**; money editing had folded into `orders.update`.)
 
 ## 5. Commission (revised 2026-10-18 — was "Ways and commission")
 
@@ -81,7 +81,7 @@ Decimal strings / SQL `numeric`, never JS floats. P = `packagePrice`, F = `deliv
 - An order's commission is **pending** while `AWAITING_APPROVAL` and **earned** once it reaches `DELIVERED` through the approval queue. A cancelled or never-delivered order earns nothing.
 - **Partner orders never carry a commission** — the API forces `commissionFee` to `'0'` when the effective assignee type is `PARTNER`.
 - An order with no township is legitimate and carries commission `'0'`.
-- **Pay anyway is removed**, along with `ways.override_commission`. Post-approval money edits (including `commissionFee`) remain reason-required and audited under `orders.update_after_approval`.
+- **Pay anyway is removed**, along with `ways.override_commission`. There is no post-approval money edit either: `commissionFee` is corrected (with an audit trail) only while the order is still open, because a `DELIVERED` order is immutable.
 - No custody sign-out/return flow, and no "5 of 10" rule.
 
 ## 6. Permissions (catalog grows beyond 68; update `MODULE_ACTIONS`, seed, docs, frontend `src/types/permission.ts`)
@@ -92,7 +92,7 @@ As built, the catalog is **13 modules / 43 keys** — the 42 below plus `orders.
 
 ## 7. APIs
 
-- Office: `POST /orders` (`riderId`/`partnerId` set = assigned; omitted or `null` = `PENDING` — a township never supplies an assignee), `PATCH /orders/:id` (audited edit; changing township asks the client to confirm before overwriting the fee and commission defaults — the assignee is never touched), `POST|DELETE /orders/:id/shop-advance` (`orders.shop_settlement`; records/clears the advance to the shop), `POST /orders/:id/cancel`, `/orders/:id/assign`, `/orders/:id/postpone`, `/orders/:id/approve`, `/orders/:id/send-back`, `/orders/:id/mark-delivered` (partner), `GET /orders/:id/audit`, townships/partners CRUD.
+- Office: `POST /orders` (`riderId`/`partnerId` set = assigned; omitted or `null` = `PENDING` — a township never supplies an assignee), `PATCH /orders/:id` (audited edit **while the order is open** — 409 once it has ended; changing township asks the client to confirm before overwriting the fee and commission defaults — the assignee is never touched), `POST|DELETE /orders/:id/shop-advance` (`orders.shop_settlement`; records/clears the advance to the shop, plus `orders.update_after_approval` and a reason on a `DELIVERED` order), `POST /orders/:id/cancel`, `/orders/:id/assign`, `/orders/:id/postpone`, `/orders/:id/approve`, `/orders/:id/send-back`, `/orders/:id/mark-delivered` (partner), `GET /orders/:id/audit`, townships/partners CRUD.
 - **The office order reads resolve names, never ids.** `GET /orders/:id` also returns `shopName` / `customerName` / `townshipName` / `assigneeName`; each history row carries `changedByName` beside `changedBy`; and `GET /orders/:id/audit` resolves the identifier-valued fields (`shopId`, `customerId`, `townshipId`, `riderId`, `partnerId`) to the referenced record's name, or `Unknown` once that record is gone. An OFFICER holds `orders.read` without `shops.read` / `customers.read` / `riders.read`, so a client-side lookup would leave them reading raw ids. The list endpoint stays id-only, and `OrderResponseDto` is unchanged.
 - Rider: board of own assigned orders (computed COD, 0 for fully prepaid), `POST /riders/me/orders/:id/delivered`. No fee/margin/partner/shop finance fields.
 - Shop: `GET /shop/orders`, `GET /shop/orders/:id`, `GET /shop/dashboard`, `GET /shop/statement` (+CSV/XLSX export). **Dedicated `ShopOrderResponseDto`**: no rider, partner, cost, internal-note or audit fields; shop-relevant history only; `AWAITING_APPROVAL` is mapped to "Out for delivery" in the DTO builder. Never hide fields conditionally on a shared DTO.
@@ -125,7 +125,7 @@ The following paths are under `/api/v1`.
 
 - **Office orders:** `GET/POST /orders`; `GET /orders/:id`; `PATCH /orders/:id`; `GET /orders/:id/history`; `GET /orders/:id/audit`; `POST /orders/:id/assign`; `POST /orders/:id/postpone`; `POST /orders/:id/cancel`; `POST /orders/:id/approve`; `POST /orders/:id/send-back`; `POST /orders/:id/mark-delivered` (partner orders).
 - **Reference data:** township CRUD at `/townships`; delivery-partner CRUD at `/delivery-partners` (permission namespace `partners`).
-- **Commission:** there is no commission endpoint. `orders.commissionFee` is read from the order and edited through `PATCH /orders/:id` (after approval, with a reason).
+- **Commission:** there is no commission endpoint. `orders.commissionFee` is read from the order and edited through `PATCH /orders/:id` while the order is open; once it is `DELIVERED` it cannot be edited.
 - **Rider:** `GET /riders/me/orders`; `POST /riders/me/orders/:id/delivered`; `GET /riders/me/dashboard`.
 - **Reports:** `GET /reports/orders` and `/reports/orders/export`; `/reports/shop-statement` and `/reports/shop-statement/export`; `/reports/rider-collection` and `/reports/rider-collection/export`; `/reports/rider-payout` and `/reports/rider-payout/export`; `GET /reports/office-dashboard`.
 - **Shop portal:** `GET /shop/orders`; `GET /shop/orders/export`; `GET /shop/orders/:id`; `GET /shop/dashboard`; `GET /shop/statement`; `GET /shop/statement/export`.

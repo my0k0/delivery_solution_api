@@ -57,6 +57,16 @@ export class OrderStateService {
     return ALLOWED_TRANSITIONS[status];
   }
 
+  /**
+   * A status with no transition out of it has ended — `DELIVERED` and
+   * `CANCELLED`. Derived from `ALLOWED_TRANSITIONS` rather than listed again, so
+   * a status that becomes terminal is terminal everywhere, including the
+   * order-edit guard below.
+   */
+  isTerminalStatus(status: OrderStatus): boolean {
+    return ALLOWED_TRANSITIONS[status].length === 0;
+  }
+
   async recordInitialStateInTransaction(
     transaction: OrderStateExecutor,
     parameters: {
