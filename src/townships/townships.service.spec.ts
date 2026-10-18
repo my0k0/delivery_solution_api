@@ -10,9 +10,6 @@ function baseTownship(overrides: Record<string, unknown> = {}) {
     defaultDeliveryFee: '3500.00',
     defaultCommissionFee: '500.00',
     leadTimeDays: 3,
-    defaultAssigneeType: null,
-    defaultRiderId: null,
-    defaultPartnerId: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     ...overrides,
@@ -29,8 +26,6 @@ describe('TownshipsService', () => {
   const db = {
     query: {
       townships: queryTownships,
-      riders: { findFirst: vi.fn() },
-      deliveryPartners: { findFirst: vi.fn() },
     },
     select: vi.fn(),
     insert: vi.fn(),
@@ -79,9 +74,6 @@ describe('TownshipsService', () => {
       defaultDeliveryFee: '3500.00',
       defaultCommissionFee: '500.00',
       leadTimeDays: 3,
-      defaultAssigneeType: null,
-      defaultRiderId: null,
-      defaultPartnerId: null,
     });
   });
 

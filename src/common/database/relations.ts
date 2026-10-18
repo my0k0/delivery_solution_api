@@ -110,22 +110,13 @@ export const orderFieldAuditRelations = relations(
   }),
 );
 
-export const townshipsRelations = relations(townships, ({ one, many }) => ({
-  defaultRider: one(riders, {
-    fields: [townships.defaultRiderId],
-    references: [riders.id],
-  }),
-  defaultPartner: one(deliveryPartners, {
-    fields: [townships.defaultPartnerId],
-    references: [deliveryPartners.id],
-  }),
+export const townshipsRelations = relations(townships, ({ many }) => ({
   orders: many(orders),
 }));
 
 export const deliveryPartnersRelations = relations(
   deliveryPartners,
   ({ many }) => ({
-    defaultTownships: many(townships),
     orders: many(orders),
   }),
 );

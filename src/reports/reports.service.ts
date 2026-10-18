@@ -23,7 +23,7 @@ import type {
   RiderDashboardResponseDto,
   RiderPayoutResponseDto,
   RiderPayoutRowDto,
-  ShopStatementResponseDto,
+  OfficeShopStatementResponseDto,
   OfficeDashboardResponseDto,
 } from './dto/report-response.dto.js';
 
@@ -78,29 +78,44 @@ export class ShopStatementService {
     private readonly config: ConfigService,
   ) {}
 
-  async getShopStatement(shopId: string, query: DateRangeQueryDto): Promise<ShopStatementResponseDto> {
+  async getShopStatement(shopId: string, query: DateRangeQueryDto): Promise<OfficeShopStatementResponseDto> {
     validateDateRange(query);
     const timeZone = this.config.get<string>('APP_TIMEZONE') ?? 'Asia/Yangon';
     const [shop] = await this.database.db.select({ id: shops.id, name: shops.name })
       .from(shops).where(eq(shops.id, shopId));
     if (!shop) throw new NotFoundException(`Shop '${shopId}' not found`);
     const dateColumn = reportDateColumn(query.dateBasis);
-    const [totals] = await this.database.db.select({
-      pendingCount: sql<number>`count(*) filter (where ${orders.status} = 'PENDING')`,
-      assignedCount: sql<number>`count(*) filter (where ${orders.status} = 'ASSIGNED')`,
-      awaitingApprovalCount: sql<number>`count(*) filter (where ${orders.status} = 'AWAITING_APPROVAL')`,
-      deliveredCount: sql<number>`count(*) filter (where ${orders.status} = 'DELIVERED')`,
-      cancelledCount: sql<number>`count(*) filter (where ${orders.status} = 'CANCELLED')`,
-      priceTotal: sql<string>`coalesce(sum(${payableMoneyExpression(orders.packagePrice)}), 0)::numeric(14, 2)::text`,
-      feeTotal: sql<string>`coalesce(sum(${payableMoneyExpression(orders.deliveryFee)}), 0)::numeric(14, 2)::text`,
-      codCollected: sql<string>`coalesce(sum(case when ${orders.status} = 'DELIVERED' then ${codToCollectSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
-      codExpected: sql<string>`coalesce(sum(case when ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL') then ${codToCollectSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
-      netOwedToShopDelivered: sql<string>`coalesce(sum(case when ${orders.status} = 'DELIVERED' then ${netOwedToShopSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
-      pendingNetOwedToShop: sql<string>`coalesce(sum(case when ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL') then ${netOwedToShopSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
-    }).from(orders).where(and(
-      eq(orders.shopId, shopId),
-      ...dateRangeConditions(dateColumn, query.dateFrom, query.dateTo, timeZone),
-    ));
+    const [totalsRows, advanceRows] = await Promise.all([
+      this.database.db.select({
+        pendingCount: sql<number>`count(*) filter (where ${orders.status} = 'PENDING')`,
+        assignedCount: sql<number>`count(*) filter (where ${orders.status} = 'ASSIGNED')`,
+        awaitingApprovalCount: sql<number>`count(*) filter (where ${orders.status} = 'AWAITING_APPROVAL')`,
+        deliveredCount: sql<number>`count(*) filter (where ${orders.status} = 'DELIVERED')`,
+        cancelledCount: sql<number>`count(*) filter (where ${orders.status} = 'CANCELLED')`,
+        priceTotal: sql<string>`coalesce(sum(${payableMoneyExpression(orders.packagePrice)}), 0)::numeric(14, 2)::text`,
+        feeTotal: sql<string>`coalesce(sum(${payableMoneyExpression(orders.deliveryFee)}), 0)::numeric(14, 2)::text`,
+        codCollected: sql<string>`coalesce(sum(case when ${orders.status} = 'DELIVERED' then ${codToCollectSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
+        codExpected: sql<string>`coalesce(sum(case when ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL') then ${codToCollectSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
+        netOwedToShopDelivered: sql<string>`coalesce(sum(case when ${orders.status} = 'DELIVERED' then ${netOwedToShopSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
+        pendingNetOwedToShop: sql<string>`coalesce(sum(case when ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL') then ${netOwedToShopSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
+      }).from(orders).where(and(
+        eq(orders.shopId, shopId),
+        ...dateRangeConditions(dateColumn, query.dateFrom, query.dateTo, timeZone),
+      )),
+      /**
+       * Advances are a flow of their own, bucketed by when the advance was paid —
+       * not by the order's entry or delivery date — so they cannot share the
+       * query above: that WHERE is keyed on the selected `dateBasis`. A null
+       * `shopAdvancedAt` never matches the range, so only real advances count.
+       */
+      this.database.db.select({
+        advancedToShop: sql<string>`coalesce(sum(${orders.shopAdvanceAmount}), 0)::numeric(14, 2)::text`,
+      }).from(orders).where(and(
+        eq(orders.shopId, shopId),
+        ...dateRangeConditions(sql`${orders.shopAdvancedAt}`, query.dateFrom, query.dateTo, timeZone),
+      )),
+    ]);
+    const totals = totalsRows[0];
     return {
       shopId: shop.id,
       shopName: shop.name,
@@ -118,6 +133,7 @@ export class ShopStatementService {
       codExpected: totals?.codExpected ?? ZERO_MONEY,
       netOwedToShopDelivered: totals?.netOwedToShopDelivered ?? ZERO_MONEY,
       pendingNetOwedToShop: totals?.pendingNetOwedToShop ?? ZERO_MONEY,
+      advancedToShop: advanceRows[0]?.advancedToShop ?? ZERO_MONEY,
     };
   }
 }
@@ -163,7 +179,7 @@ export class ReportsService {
     return { ...totals, orderCount: Number(totals.orderCount) };
   }
 
-  async getShopStatement(shopId: string, query: DateRangeQueryDto): Promise<ShopStatementResponseDto> {
+  async getShopStatement(shopId: string, query: DateRangeQueryDto): Promise<OfficeShopStatementResponseDto> {
     return this.shopStatementService.getShopStatement(shopId, query);
   }
 
@@ -477,6 +493,12 @@ export class ReportsService {
       deliveryFee: sql<string>`case when ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'DELIVERED') then ${orders.deliveryFee} else 0::numeric end::numeric(14, 2)::text`,
       codToCollect: sql<string>`${codExpression}::numeric(14, 2)::text`,
       netOwedToShop: sql<string>`${netExpression}::numeric(14, 2)::text`,
+      /**
+       * Reported regardless of status, unlike the payable columns above: on a
+       * cancelled order the recorded advance is money already paid out, and
+       * zeroing it would conceal the very case this column exists to expose.
+       */
+      shopAdvanceAmount: sql<string>`${orders.shopAdvanceAmount}::numeric(14, 2)::text`,
       partnerFee: sql<string>`case when ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'DELIVERED') then ${orders.partnerFee} else 0::numeric end::numeric(14, 2)::text`,
       createdAt: orders.createdAt,
       deliveredAt: orders.deliveredAt,
@@ -502,6 +524,8 @@ export class ReportsService {
       deliveryFee: sql<string>`coalesce(sum(${payableMoneyExpression(orders.deliveryFee)}), 0)::numeric(14, 2)::text`,
       codToCollect: sql<string>`coalesce(sum(case when ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'DELIVERED') then ${codToCollectSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
       netOwedToShop: sql<string>`coalesce(sum(case when ${orders.status} in ('PENDING', 'ASSIGNED', 'AWAITING_APPROVAL', 'DELIVERED') then ${netOwedToShopSql(orders)} else 0::numeric end), 0)::numeric(14, 2)::text`,
+      /** Ungated by status, for the same reason as the per-row column. */
+      shopAdvanceAmount: sql<string>`coalesce(sum(${orders.shopAdvanceAmount}), 0)::numeric(14, 2)::text`,
       partnerFee: sql<string>`coalesce(sum(${payableMoneyExpression(orders.partnerFee)}), 0)::numeric(14, 2)::text`,
     }).from(orders).where(where);
     return {
@@ -510,6 +534,7 @@ export class ReportsService {
       deliveryFee: row?.deliveryFee ?? ZERO_MONEY,
       codToCollect: row?.codToCollect ?? ZERO_MONEY,
       netOwedToShop: row?.netOwedToShop ?? ZERO_MONEY,
+      shopAdvanceAmount: row?.shopAdvanceAmount ?? ZERO_MONEY,
       partnerFee: row?.partnerFee ?? ZERO_MONEY,
     };
   }

@@ -24,6 +24,17 @@ export class OrderResponseDto {
   deliveryFee: string;
   @ApiProperty({ example: '500.00', description: 'Rider commission for this order; not exposed to shop users' })
   commissionFee: string;
+  @ApiProperty({
+    example: '47000.00',
+    description:
+      'Package price the company advanced this shop for this order, snapshotted when the advance was recorded. Independent of later packagePrice edits; not exposed to shop users',
+  })
+  shopAdvanceAmount: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'When the advance was paid; null = not yet advanced',
+  })
+  shopAdvancedAt: string | null;
   @ApiProperty() isPackagePaidToShop: boolean;
   @ApiProperty() isFeePaidToShop: boolean;
   @ApiProperty({ description: 'Internal partner cost; not exposed to shop users' })

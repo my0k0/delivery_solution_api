@@ -1,6 +1,6 @@
 # Delivery Workflow v2 — Approved Requirement Change
 
-**Status:** IMPLEMENTED (phases A–E complete; Phase F documentation updated). **Revised 2026-10-18:** the per-**way** commission model was replaced by per-**order** rider commission (§5), and the permission catalog is now **13 modules / 42 keys** (§6).
+**Status:** IMPLEMENTED (phases A–E complete; Phase F documentation updated). **Revised 2026-10-18:** the per-**way** commission model was replaced by per-**order** rider commission (§5); the township default-assignee feature was **removed** (§2.9); the catalog is now **13 modules / 43 keys** (§6); and the shop advance (Phase 1) is **built** while the reclaim (Phase 2) is not (§1).
 
 Repos: `delivery_solution_api` (NestJS 12, Drizzle, Postgres 18) and `delivery_solution_frontend` (Vite + React + TS). Follow each repo's `CLAUDE.md`: no `any`, no abbreviations, ESM `.js` import suffixes, kebab-case typed file names, DTOs for all request/response shapes with `@Api*Response({ type })`, one responsibility per dialog/form file on the frontend, `pnpm codegen` for frontend API types (API must be running), **no new test files in the frontend**.
 
@@ -10,7 +10,7 @@ Myanmar delivery company. Flow: shop → delivery company → customer (customer
 
 Real voucher patterns: price + fee to collect (47,000 + 3,500 = 50,500); "COD 18,000, delivery already paid"; "95,000 + deli".
 
-**Open gap — the prepayment itself is still not modelled.** The company→shop advance described above, and the reclaim of that advance when a package comes back to the shop, have no representation in the schema or the API. Designed but **not built**: see `delivery_solution_frontend/docs/business-flows.md` and `delivery_solution_frontend/docs/superpowers/specs/2026-10-18-shop-advance-and-returns-design.md`. Phase 6 stays blocked; the design respects that.
+**Phase 1 built; the reclaim is still open.** The company→shop advance is now modelled — `orders.shopAdvanceAmount` / `shopAdvancedAt`, the `POST`/`DELETE /orders/:id/shop-advance` endpoints (gated `orders.shop_settlement`), a `− shopAdvanceAmount` term in net-owed, and a `shopAdvance` filter, all shipped 2026-10-18. **The reclaim is not built:** the return of an advance when a package comes back to the shop has no representation in the schema or the API, and `CANCELLED` still contributes `0` to every payable figure. Designed but not built: see `delivery_solution_frontend/docs/business-flows.md` and `delivery_solution_frontend/docs/superpowers/specs/2026-10-18-shop-advance-and-returns-design.md`. Phase 6 stays blocked; the design respects that.
 
 ## 2. Final decisions
 
@@ -22,7 +22,7 @@ Real voucher patterns: price + fee to collect (47,000 + 3,500 = 50,500); "COD 18
 6. **Failure/postponement:** only an officer decides, with a reason visible to the shop. Order may be re-assigned to the same rider, another rider, or nobody (goes to `PENDING`).
 7. **Statuses:** `PENDING` (no assignee), `ASSIGNED`, `AWAITING_APPROVAL`, `DELIVERED`, `CANCELLED`. Clearing the assignee returns to `PENDING`. All state changes are kept in history.
 8. **Editable order:** all fields (township, shop, customer, address, notes, price, delivery fee, assignee including blank, etc.), every edit audited field-by-field.
-9. **No round-robin.** One default rider-or-partner per township; one rider may cover many townships. Order create prefills the township default assignee; manual override allowed.
+9. **No assignee defaults — revised 2026-10-18.** A township carries money and lead-time defaults only: no `defaultAssigneeType` / `defaultRiderId` / `defaultPartnerId`, and no township↔rider coverage relation. An order is assigned only by naming a rider or a partner explicitly; with neither, it stays `PENDING`.
 10. **Township** has `defaultDeliveryFee` (prefilled, overridable) and `leadTimeDays`, and — since 2026-10-18 — a required `defaultCommissionFee` (§5).
 11. **Estimated delivery date** shown to shops.
 12. **Shops never see rider info or partner name.** Partner charge is an internal cost field.
@@ -40,7 +40,7 @@ Real voucher patterns: price + fee to collect (47,000 + 3,500 = 50,500); "COD 18
 
 New tables (all with `id uuid default gen_random_uuid()`, `created_at`/`updated_at` timestamptz; re-export every table from `src/common/database/schema.ts`):
 
-- `townships`: `name` (unique), `defaultDeliveryFee numeric(12,2)`, `defaultCommissionFee numeric(12,2)`, `leadTimeDays int`, `defaultAssigneeType` (`RIDER`|`PARTNER`|null), `defaultRiderId`, `defaultPartnerId`. Check constraint: assignee columns consistent with type.
+- `townships`: `name` (unique), `defaultDeliveryFee numeric(12,2)`, `defaultCommissionFee numeric(12,2)`, `leadTimeDays int`. (The `defaultAssigneeType` / `defaultRiderId` / `defaultPartnerId` columns, their check constraint and their indexes were **removed 2026-10-18** — a township carries no assignee. Migration `0021`.)
 - `delivery_partners`: `name` (unique), `phone`, `note`, `isActive`.
 - ~~`ways`~~ — **removed 2026-10-18**; rider commission is per order (§5).
 - `order_field_audit`: `orderId`, `field`, `oldValue`, `newValue`, `actorId`, `reason`, `createdAt`.
@@ -88,11 +88,12 @@ Decimal strings / SQL `numeric`, never JS floats. P = `packagePrice`, F = `deliv
 
 New/changed keys: `deliveries.approve`, `orders.cancel`, `orders.update_after_approval`, `shop-portal.read`, `shop-reports.export`; add modules `townships`, `partners`; remove `pickups.*`. Riders must still not receive `orders.read`. The SHOP role gets only `shop-portal.read` and `shop-reports.export`. Update OFFICER/RIDER/SHOP seed mappings. (`orders.update_costs`, `ways.override_commission`, and the whole `ways` module were **removed 2026-10-18**.)
 
-As built, the catalog is **13 modules / 42 keys**. The `returns`, `payments`, and `notifications` modules were removed entirely, then every key with no endpoint behind it (`*.import`, the per-module `*.export`, and the route-less `orders.delete` / `deliveries.create` / `deliveries.delete`), and finally the `ways` module together with `orders.update_costs` when the per-way commission model was replaced by per-order commission — so the catalog no longer reserves keys for unimplemented areas.
+As built, the catalog is **13 modules / 43 keys** — the 42 below plus `orders.shop_settlement` (added 2026-10-18 with the shop advance, §1). The `returns`, `payments`, and `notifications` modules were removed entirely, then every key with no endpoint behind it (`*.import`, the per-module `*.export`, and the route-less `orders.delete` / `deliveries.create` / `deliveries.delete`), and finally the `ways` module together with `orders.update_costs` when the per-way commission model was replaced by per-order commission — so the catalog no longer reserves keys for unimplemented areas.
 
 ## 7. APIs
 
-- Office: `POST /orders` (`riderId` set = manual, `null` = pending, omitted = township default; a township without assignee does not block creation), `PATCH /orders/:id` (audited edit; changing township asks the client to confirm before overwriting fee/assignee defaults), `POST /orders/:id/cancel`, `/orders/:id/assign`, `/orders/:id/postpone`, `/orders/:id/approve`, `/orders/:id/send-back`, `/orders/:id/mark-delivered` (partner), `GET /orders/:id/audit`, townships/partners CRUD.
+- Office: `POST /orders` (`riderId`/`partnerId` set = assigned; omitted or `null` = `PENDING` — a township never supplies an assignee), `PATCH /orders/:id` (audited edit; changing township asks the client to confirm before overwriting the fee and commission defaults — the assignee is never touched), `POST|DELETE /orders/:id/shop-advance` (`orders.shop_settlement`; records/clears the advance to the shop), `POST /orders/:id/cancel`, `/orders/:id/assign`, `/orders/:id/postpone`, `/orders/:id/approve`, `/orders/:id/send-back`, `/orders/:id/mark-delivered` (partner), `GET /orders/:id/audit`, townships/partners CRUD.
+- **The office order reads resolve names, never ids.** `GET /orders/:id` also returns `shopName` / `customerName` / `townshipName` / `assigneeName`; each history row carries `changedByName` beside `changedBy`; and `GET /orders/:id/audit` resolves the identifier-valued fields (`shopId`, `customerId`, `townshipId`, `riderId`, `partnerId`) to the referenced record's name, or `Unknown` once that record is gone. An OFFICER holds `orders.read` without `shops.read` / `customers.read` / `riders.read`, so a client-side lookup would leave them reading raw ids. The list endpoint stays id-only, and `OrderResponseDto` is unchanged.
 - Rider: board of own assigned orders (computed COD, 0 for fully prepaid), `POST /riders/me/orders/:id/delivered`. No fee/margin/partner/shop finance fields.
 - Shop: `GET /shop/orders`, `GET /shop/orders/:id`, `GET /shop/dashboard`, `GET /shop/statement` (+CSV/XLSX export). **Dedicated `ShopOrderResponseDto`**: no rider, partner, cost, internal-note or audit fields; shop-relevant history only; `AWAITING_APPROVAL` is mapped to "Out for delivery" in the DTO builder. Never hide fields conditionally on a shared DTO.
 - Reports (read-only, derived): shop statement, order report (filters: date, shop, township, status, assignee; totals row; CSV), rider collection (per rider per day, expected COD to hand back), rider payout (per rider: delivered-order count, earned vs pending commission), office dashboard, shop dashboard, rider dashboard.

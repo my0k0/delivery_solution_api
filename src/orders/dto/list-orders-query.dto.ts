@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -14,6 +15,14 @@ import { ORDER_STATUSES, type OrderStatus } from '../order.schema.js';
 
 export const ORDER_DATE_BASES = ['ENTRY', 'DELIVERED'] as const;
 export type OrderDateBasis = (typeof ORDER_DATE_BASES)[number];
+
+/**
+ * `NOT_ADVANCED` is a work list, not a null scan: orders that need an advance
+ * and do not have one (not customer-prepaid, not cancelled). `ADVANCED` is every
+ * order with an advance recorded, whatever its status.
+ */
+export const SHOP_ADVANCE_FILTERS = ['ADVANCED', 'NOT_ADVANCED'] as const;
+export type ShopAdvanceFilter = (typeof SHOP_ADVANCE_FILTERS)[number];
 
 export class ListOrdersQueryDto {
   @ApiPropertyOptional({ example: 1, default: 1, minimum: 1 })
@@ -75,4 +84,24 @@ export class ListOrdersQueryDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  @ApiPropertyOptional({
+    enum: SHOP_ADVANCE_FILTERS,
+    description:
+      'ADVANCED = an advance is recorded. NOT_ADVANCED = an advance is still due (not customer-prepaid, not cancelled).',
+  })
+  @IsOptional()
+  @IsEnum(SHOP_ADVANCE_FILTERS)
+  shopAdvance?: ShopAdvanceFilter;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description: 'Filter by whether the customer paid the shop for the package',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  isPackagePaidToShop?: boolean;
 }

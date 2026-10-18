@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -29,6 +30,7 @@ import { OrderListResponseDto } from './dto/order-list-response.dto.js';
 import { OrderReasonDto } from './dto/order-reason.dto.js';
 import { OrderResponseDto } from './dto/order-response.dto.js';
 import { SendBackOrderDto } from './dto/send-back-order.dto.js';
+import { ShopAdvanceDto } from './dto/shop-advance.dto.js';
 import { UpdateOrderDto } from './dto/update-order.dto.js';
 import { OrdersService } from './orders.service.js';
 
@@ -139,6 +141,38 @@ export class OrdersController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<OrderResponseDto> {
     return this.ordersService.markPartnerDelivered(id, currentUser.id);
+  }
+
+  @Post(':id/shop-advance')
+  @RequirePermissions('orders.shop_settlement')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Record that the company advanced the package price to the shop. No amount is accepted; the package price is snapshotted.',
+  })
+  @ApiOkResponse({ type: OrderResponseDto })
+  recordShopAdvance(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: ShopAdvanceDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<OrderResponseDto> {
+    return this.ordersService.recordShopAdvance(id, input, currentUser.id, currentUser.roleId);
+  }
+
+  @Delete(':id/shop-advance')
+  @RequirePermissions('orders.shop_settlement')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Clear a recorded shop advance. Refused on a cancelled order, where the advance is money owed back.',
+  })
+  @ApiOkResponse({ type: OrderResponseDto })
+  clearShopAdvance(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: ShopAdvanceDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ): Promise<OrderResponseDto> {
+    return this.ordersService.clearShopAdvance(id, input, currentUser.id, currentUser.roleId);
   }
 
   @Patch(':id')

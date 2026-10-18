@@ -22,6 +22,7 @@ export const MODULE_ACTIONS = {
     'update',
     'cancel',
     'update_after_approval',
+    'shop_settlement',
   ],
   deliveries: ['read', 'update', 'approve'],
   townships: ['create', 'read', 'update', 'delete'],

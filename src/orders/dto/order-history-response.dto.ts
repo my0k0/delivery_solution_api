@@ -18,8 +18,19 @@ export class OrderHistoryResponseDto {
   @ApiProperty({ enum: ORDER_STATUSES, enumName: 'OrderStatus' })
   toStatus: OrderStatus;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Id of the acting user. `changedByName` is what a reader shows; this stays for correlation.',
+  })
   changedBy: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Resolved name of the acting user; null when the actor was deleted.',
+  })
+  changedByName: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   note: string | null;

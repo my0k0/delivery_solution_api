@@ -43,4 +43,24 @@ describe('report money rules', () => {
       netOwedToShop: '9999999999.99',
     });
   });
+
+  it('settles a fully advanced COD order to zero net owed, leaving COD untouched', () => {
+    expect(calculateOrderMoney('47000.00', '3500.00', false, false, '47000.00')).toEqual({
+      codToCollect: '50500.00',
+      netOwedToShop: '0.00',
+    });
+  });
+
+  it('subtracts a partial advance from net owed only, never from COD', () => {
+    expect(calculateOrderMoney('47000.00', '3500.00', false, true, '20000.00')).toEqual({
+      codToCollect: '47000.00',
+      netOwedToShop: '23500.00',
+    });
+  });
+
+  it('reproduces the pre-advance figures when no advance was paid', () => {
+    expect(calculateOrderMoney('47000.00', '3500.00', false, false, '0.00')).toEqual(
+      calculateOrderMoney('47000.00', '3500.00', false, false),
+    );
+  });
 });

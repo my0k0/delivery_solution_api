@@ -17,7 +17,7 @@ import {
   OrderReportResponseDto,
   RiderCollectionResponseDto,
   RiderPayoutResponseDto,
-  ShopStatementResponseDto,
+  OfficeShopStatementResponseDto,
 } from './dto/report-response.dto.js';
 import { renderCsv, renderXlsx, reportFilename, type ExportRow } from './report-export.util.js';
 
@@ -64,18 +64,18 @@ export class ReportsController {
       this.reports.getOrderReportTotalsForExport(query),
     ]);
     sendExport(response, query.format, 'orders', query.dateFrom, query.dateTo,
-      ['orderId', 'trackingCode', 'shopName', 'customerName', 'customerPhone', 'deliveryAddress', 'shopId', 'townshipId', 'townshipName', 'status', 'assigneeType', 'assigneeId', 'assigneeName', 'packagePrice', 'deliveryFee', 'codToCollect', 'netOwedToShop', 'partnerFee', 'createdAt', 'deliveredAt'],
+      ['orderId', 'trackingCode', 'shopName', 'customerName', 'customerPhone', 'deliveryAddress', 'shopId', 'townshipId', 'townshipName', 'status', 'assigneeType', 'assigneeId', 'assigneeName', 'packagePrice', 'deliveryFee', 'codToCollect', 'netOwedToShop', 'shopAdvanceAmount', 'partnerFee', 'createdAt', 'deliveredAt'],
       [
-        ...rows.map((row): ExportRow => [row.id, row.trackingCode, row.shopName, row.customerName, row.customerPhone, row.deliveryAddress, row.shopId, row.townshipId, row.townshipName, row.status, row.assigneeType, row.assigneeId, row.assigneeName, row.packagePrice, row.deliveryFee, row.codToCollect, row.netOwedToShop, row.partnerFee, row.createdAt, row.deliveredAt]),
-        ['TOTAL', '', '', '', '', '', '', '', '', '', '', '', '', totals.packagePrice, totals.deliveryFee, totals.codToCollect, totals.netOwedToShop, totals.partnerFee, '', ''],
+        ...rows.map((row): ExportRow => [row.id, row.trackingCode, row.shopName, row.customerName, row.customerPhone, row.deliveryAddress, row.shopId, row.townshipId, row.townshipName, row.status, row.assigneeType, row.assigneeId, row.assigneeName, row.packagePrice, row.deliveryFee, row.codToCollect, row.netOwedToShop, row.shopAdvanceAmount, row.partnerFee, row.createdAt, row.deliveredAt]),
+        ['TOTAL', '', '', '', '', '', '', '', '', '', '', '', '', totals.packagePrice, totals.deliveryFee, totals.codToCollect, totals.netOwedToShop, totals.shopAdvanceAmount, totals.partnerFee, '', ''],
       ]);
   }
 
   @Get('shop-statement')
   @RequirePermissions('reports.read')
   @ApiOperation({ summary: 'Get office-level shop statement' })
-  @ApiOkResponse({ type: ShopStatementResponseDto })
-  getShopStatement(@Query() query: ShopStatementQueryDto): Promise<ShopStatementResponseDto> {
+  @ApiOkResponse({ type: OfficeShopStatementResponseDto })
+  getShopStatement(@Query() query: ShopStatementQueryDto): Promise<OfficeShopStatementResponseDto> {
     return this.reports.getShopStatement(query.shopId, query);
   }
 

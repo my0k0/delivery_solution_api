@@ -90,7 +90,7 @@ Demo login emails created by `pnpm db:seed:demo`: `rider1@demo.delivery.local`, 
 
 ## RBAC
 
-The catalog in `src/common/auth/permission-keys.ts` is fixed and seeded: **13 modules / 42 keys**. Modules: `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`. The catalog has read-only API access; role grant sets are replaceable with `permissions.update`, but keys cannot be created/deleted at runtime.
+The catalog in `src/common/auth/permission-keys.ts` is fixed and seeded: **13 modules / 43 keys**. Modules: `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`. The catalog has read-only API access; role grant sets are replaceable with `permissions.update`, but keys cannot be created/deleted at runtime. (`orders.shop_settlement` was added 2026-10-18 with the shop advance; the catalog was 42 keys before it.)
 
 Seeded roles and grants from `scripts/seed.ts`:
 
@@ -109,7 +109,7 @@ Every route requires a JWT unless `@Public()`. Protected routes need explicit `@
 - Business-day boundaries and date grouping always use `APP_TIMEZONE`.
 - Shop-portal responses use dedicated DTOs. The shop scope always comes from the authenticated user's `shopId`, never a client-supplied shop id.
 - CSV/XLSX exports use the formula-injection guard in `src/reports/report-export.util.ts`.
-- Partner-assigned orders never have a way or rider commission; preserve `orders_partner_way_consistency_check` and clear `wayId` when changing to a partner.
+- Partner-assigned orders never carry a rider commission: the service forces `commissionFee = '0'` whenever the effective assignee is a partner, and preserves `orders_assignee_consistency_check` (assignee type, rider and partner must agree).
 - Controllers use `@Controller({ path: 'x', version: '1' })`; response DTOs need accurate `@Api*Response({ type })` metadata.
 
 ## Migrations gotchas
@@ -118,7 +118,7 @@ Every route requires a JWT unless `@Public()`. Protected routes need explicit `@
 - Drizzle bookkeeping is in `drizzle.__drizzle_migrations`, not `public`. Never delete `drizzle/meta/*` or generated SQL; stale metadata can make migrations replay.
 - Use `pnpm db:reset` for a clean local reset. Inspect tables through the Compose service, not a hardcoded container name:
   ```bash
-  docker compose exec -T postgres psql -U delivery_user -d delivery_db -c "\\dt"
+  docker compose exec -T postgres psql -U delivery_user -d delivery_db_mk -c "\\dt"
   ```
 - `db:reset` is destructive: it drops `public` and the `drizzle` schema, then migrates and base-seeds.
 

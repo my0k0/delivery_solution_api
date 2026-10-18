@@ -141,6 +141,20 @@
       "when": 1792272731204,
       "tag": "0019_certain_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792336947874,
+      "tag": "0020_outgoing_sunfire",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792341059553,
+      "tag": "0021_broken_ultimatum",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,7 @@ export class OrderReportRowDto {
   @ApiProperty() deliveryFee!: string;
   @ApiProperty() codToCollect!: string;
   @ApiProperty() netOwedToShop!: string;
+  @ApiProperty() shopAdvanceAmount!: string;
   @ApiProperty() partnerFee!: string;
   @ApiProperty() createdAt!: string;
   @ApiPropertyOptional({ nullable: true }) deliveredAt!: string | null;
@@ -37,6 +38,7 @@ export class OrderReportTotalsDto {
   @ApiProperty() deliveryFee!: string;
   @ApiProperty() codToCollect!: string;
   @ApiProperty() netOwedToShop!: string;
+  @ApiProperty() shopAdvanceAmount!: string;
   @ApiProperty() partnerFee!: string;
 }
 
@@ -46,7 +48,7 @@ export class OrderReportResponseDto {
   @ApiProperty({ type: OrderReportTotalsDto }) totals!: OrderReportTotalsDto;
 }
 
-export class ShopStatementResponseDto {
+export class OfficeShopStatementResponseDto {
   @ApiProperty() shopId!: string;
   @ApiProperty() shopName!: string;
   @ApiProperty() dateFrom!: string;
@@ -63,6 +65,11 @@ export class ShopStatementResponseDto {
   @ApiProperty() codExpected!: string;
   @ApiProperty() netOwedToShopDelivered!: string;
   @ApiProperty() pendingNetOwedToShop!: string;
+  @ApiProperty({
+    description:
+      'Flow: advances paid to this shop during the selected period, bucketed by the advance date',
+  })
+  advancedToShop!: string;
 }
 
 export class RiderCollectionRowDto {

@@ -134,33 +134,33 @@ describe('Phase B office order workflow (e2e)', () => {
     if (app) await app.close();
   });
 
-  it('creates orders with no township default and with a township default rider', async () => {
-    const noDefaultResponse = await request(app.getHttpServer())
+  it('creates an order that stays PENDING and takes only the township money defaults', async () => {
+    const townshipResponse = await request(app.getHttpServer())
       .post('/api/v1/townships')
       .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ name: `No default ${run}`, defaultDeliveryFee: '2400.00', defaultCommissionFee: '400.00', leadTimeDays: 2 })
+      .send({ name: `Money only ${run}`, defaultDeliveryFee: '2400.00', defaultCommissionFee: '400.00', leadTimeDays: 2 })
       .expect(201);
-    const noDefaultTownshipId = noDefaultResponse.body.id as string;
-    townshipIds.push(noDefaultTownshipId);
-    const pendingOrder = await createOrder({ townshipId: noDefaultTownshipId });
-    expect(pendingOrder.status).toBe('PENDING');
-    expect(pendingOrder.deliveryFee).toBe('2400.00');
-    expect(pendingOrder.estimatedDeliveryDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const townshipId = townshipResponse.body.id as string;
+    townshipIds.push(townshipId);
+    const order = await createOrder({ townshipId });
+    expect(order.status).toBe('PENDING');
+    expect(order.assigneeType).toBeNull();
+    expect(order.riderId).toBeNull();
+    expect(order.partnerId).toBeNull();
+    expect(order.deliveryFee).toBe('2400.00');
+    expect(order.estimatedDeliveryDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
 
-    const defaultResponse = await request(app.getHttpServer())
+  /** A township cannot name an assignee, so the removed fields are rejected outright. */
+  it('rejects the removed township assignee fields', async () => {
+    await request(app.getHttpServer())
       .post('/api/v1/townships')
       .set('Authorization', `Bearer ${ownerToken}`)
       .send({
-        name: `Default rider ${run}`, defaultDeliveryFee: '3100.00', defaultCommissionFee: '450.00', leadTimeDays: 1,
+        name: `Rejected assignee ${run}`, defaultDeliveryFee: '3100.00', defaultCommissionFee: '450.00', leadTimeDays: 1,
         defaultAssigneeType: 'RIDER', defaultRiderId: riderId,
       })
-      .expect(201);
-    const defaultTownshipId = defaultResponse.body.id as string;
-    townshipIds.push(defaultTownshipId);
-    const assignedOrder = await createOrder({ townshipId: defaultTownshipId });
-    expect(assignedOrder.status).toBe('ASSIGNED');
-    expect(assignedOrder.riderId).toBe(riderId);
-    expect(assignedOrder.deliveryFee).toBe('3100.00');
+      .expect(400);
   });
 
   it('submits a rider delivery for approval and approves it', async () => {
@@ -393,32 +393,6 @@ describe('Phase B office order workflow (e2e)', () => {
       .expect(200);
 
     expect(updated.body).toMatchObject({ status: 'PENDING', assigneeType: null, riderId: null, partnerId: null });
-  });
-
-  it('applyTownshipAssignee with no default makes the order PENDING, while an explicit rider wins', async () => {
-    const townshipResponse = await request(app.getHttpServer())
-      .post('/api/v1/townships')
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ name: `No assignee default ${run}`, defaultDeliveryFee: '0', defaultCommissionFee: '0', leadTimeDays: 0 })
-      .expect(201);
-    const townshipId = townshipResponse.body.id as string;
-    townshipIds.push(townshipId);
-
-    const clearedOrder = await createOrder({ riderId });
-    const cleared = await request(app.getHttpServer())
-      .patch(`/api/v1/orders/${String(clearedOrder.id)}`)
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ townshipId, applyTownshipAssignee: true })
-      .expect(200);
-    expect(cleared.body).toMatchObject({ status: 'PENDING', assigneeType: null, riderId: null, partnerId: null });
-
-    const explicitOrder = await createOrder({ riderId });
-    const explicit = await request(app.getHttpServer())
-      .patch(`/api/v1/orders/${String(explicitOrder.id)}`)
-      .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ townshipId, applyTownshipAssignee: true, riderId: otherRiderId })
-      .expect(200);
-    expect(explicit.body).toMatchObject({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId: otherRiderId, partnerId: null });
   });
 
   it('does not touch the assignee or status when only notes change', async () => {

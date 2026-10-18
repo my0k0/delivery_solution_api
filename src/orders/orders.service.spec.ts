@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { DatabaseService } from '../common/database/database.service.js';
@@ -24,6 +24,8 @@ function baseOrder(overrides: Record<string, unknown> = {}) {
     isFeePaidToShop: false,
     partnerFee: '0.00',
     commissionFee: '0.00',
+    shopAdvanceAmount: '0.00',
+    shopAdvancedAt: null as Date | null,
     estimatedDeliveryDate: null,
     deliveredAt: null,
     deliveryAddress: null,
@@ -43,6 +45,7 @@ function baseHistory(overrides: Record<string, unknown> = {}) {
     fromStatus: null,
     toStatus: 'PENDING' as const,
     changedBy: '55555555-5555-4555-8555-555555555555',
+    changedByName: 'System Owner',
     note: 'Order registered',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     ...overrides,
@@ -52,6 +55,7 @@ function baseHistory(overrides: Record<string, unknown> = {}) {
 function queryChain(result: unknown) {
   const chain = {
     from: vi.fn(),
+    leftJoin: vi.fn(),
     where: vi.fn(),
     for: vi.fn(),
     orderBy: vi.fn(),
@@ -61,6 +65,7 @@ function queryChain(result: unknown) {
       Promise.resolve(result).then(resolve),
   };
   chain.from.mockReturnValue(chain);
+  chain.leftJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   chain.for.mockReturnValue(chain);
   chain.orderBy.mockReturnValue(chain);
@@ -127,6 +132,34 @@ describe('OrdersService', () => {
     return { auditValues };
   }
 
+  /**
+   * Stands up a settlement transaction: a locked read of `currentOrder`, an
+   * update whose `set` values are captured, and audit inserts. Returns the
+   * captured update payload so a test can assert what was actually written.
+   */
+  function prepareSettlementTransaction(currentOrder: ReturnType<typeof baseOrder>) {
+    const updateValues = vi.fn();
+    const auditValues = vi.fn().mockResolvedValue(undefined);
+    const transactionClient = {
+      select: vi.fn(() => queryChain([currentOrder])),
+      update: vi.fn(() => ({
+        set: vi.fn((values: Record<string, unknown>) => {
+          updateValues(values);
+          return {
+            where: vi.fn(() => ({
+              returning: vi.fn(async () => [{ ...currentOrder, ...values }]),
+            })),
+          };
+        }),
+      })),
+      insert: vi.fn(() => ({ values: auditValues })),
+    };
+    db.transaction.mockImplementation(
+      async (callback: (transaction: typeof transactionClient) => Promise<unknown>) => callback(transactionClient),
+    );
+    return { updateValues, auditValues };
+  }
+
   beforeEach(async () => {
     vi.resetAllMocks();
     const moduleRef = await Test.createTestingModule({
@@ -179,14 +212,19 @@ describe('OrdersService', () => {
   it('returns an order with its history', async () => {
     db.select
       .mockReturnValueOnce(queryChain([baseOrder()]))
+      .mockReturnValueOnce(queryChain([{ name: 'Central Shop' }]))
+      .mockReturnValueOnce(queryChain([{ name: 'Khin Myo' }]))
       .mockReturnValueOnce(queryChain([baseHistory()]));
 
     const result = await service.getById(baseOrder().id);
 
     expect(result.status).toBe('PENDING');
+    expect(result.shopName).toBe('Central Shop');
+    expect(result.customerName).toBe('Khin Myo');
     expect(result.history).toHaveLength(1);
     expect(result.history[0].fromStatus).toBeNull();
     expect(result.history[0].toStatus).toBe('PENDING');
+    expect(result.history[0].changedByName).toBe('System Owner');
   });
 
   it('creates a PENDING order and initial history in one transaction', async () => {
@@ -248,6 +286,53 @@ describe('OrdersService', () => {
     );
   });
 
+  it('leaves an order PENDING when its township has no assignee default and no rider is given', async () => {
+    const townshipId = '66666666-6666-4666-8666-666666666666';
+    queryShops.findFirst.mockResolvedValue({ id: baseOrder().shopId });
+    queryCustomers.findFirst.mockResolvedValue({ id: baseOrder().customerId });
+    queryTownships.findFirst.mockResolvedValue({
+      id: townshipId,
+      name: 'Demo Central',
+      defaultDeliveryFee: '3500.00',
+      defaultCommissionFee: '500.00',
+      leadTimeDays: 2,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    const pendingOrder = baseOrder({ status: 'PENDING', deliveryFee: '3500.00', commissionFee: '500.00' });
+    const orderInsert = {
+      values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([pendingOrder]) }),
+    };
+    const historyInsert = { values: vi.fn().mockResolvedValue(undefined) };
+    const transaction = {
+      insert: vi.fn().mockReturnValueOnce(orderInsert).mockReturnValueOnce(historyInsert),
+    };
+    db.transaction.mockImplementation(async (callback: (databaseTransaction: typeof transaction) => Promise<unknown>) => callback(transaction));
+
+    const response = await service.create({
+      shopId: baseOrder().shopId,
+      customerId: baseOrder().customerId,
+      townshipId,
+    }, 'actor-1');
+
+    const orderValues = orderInsert.values.mock.calls[0][0] as {
+      status: string;
+      assigneeType: string | null;
+      riderId: string | null;
+      partnerId: string | null;
+      deliveryFee: string;
+      commissionFee: string;
+    };
+    expect(orderValues.status).toBe('PENDING');
+    expect(orderValues.assigneeType).toBeNull();
+    expect(orderValues.riderId).toBeNull();
+    expect(orderValues.partnerId).toBeNull();
+    /** The township still supplies its money defaults; only the assignee is gone. */
+    expect(orderValues.deliveryFee).toBe('3500.00');
+    expect(orderValues.commissionFee).toBe('500.00');
+    expect(response.riderId).toBeNull();
+  });
+
   it('prefills the rider commission from the township default when creating an order', async () => {
     const townshipId = '66666666-6666-4666-8666-666666666666';
     queryShops.findFirst.mockResolvedValue({ id: baseOrder().shopId });
@@ -258,9 +343,6 @@ describe('OrdersService', () => {
       defaultDeliveryFee: '3500.00',
       defaultCommissionFee: '500.00',
       leadTimeDays: 2,
-      defaultAssigneeType: null,
-      defaultRiderId: null,
-      defaultPartnerId: null,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     });
@@ -297,8 +379,11 @@ describe('OrdersService', () => {
     expect(response.commissionFee).toBe('500.00');
   });
 
-  /** Partner orders are paid through `partnerFee`; they never carry a rider commission. */
-  it('never stores a commission on a partner order, even when the township and the body both set one', async () => {
+  /**
+   * Partner orders are paid through `partnerFee`; they never carry a rider
+   * commission. The partner is named explicitly — a township cannot supply one.
+   */
+  it('never stores a commission on a partner order, even when the body sets one', async () => {
     const townshipId = '66666666-6666-4666-8666-666666666666';
     const partnerId = '77777777-7777-4777-8777-777777777777';
     queryShops.findFirst.mockResolvedValue({ id: baseOrder().shopId });
@@ -309,9 +394,6 @@ describe('OrdersService', () => {
       defaultDeliveryFee: '4500.00',
       defaultCommissionFee: '700.00',
       leadTimeDays: 2,
-      defaultAssigneeType: 'PARTNER',
-      defaultRiderId: null,
-      defaultPartnerId: partnerId,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     });
@@ -336,6 +418,7 @@ describe('OrdersService', () => {
       shopId: baseOrder().shopId,
       customerId: baseOrder().customerId,
       townshipId,
+      partnerId,
       commissionFee: '700.00',
     }, 'actor-1');
 
@@ -447,7 +530,7 @@ describe('OrdersService', () => {
       status: 'ASSIGNED',
     });
     const { auditValues } = prepareUpdateTransaction(current);
-    queryTownships.findFirst.mockResolvedValue({ id: townshipId, leadTimeDays: 0, defaultAssigneeType: null });
+    queryTownships.findFirst.mockResolvedValue({ id: townshipId, leadTimeDays: 0 });
     queryRiders.findFirst.mockResolvedValue({ id: riderId });
 
     const result = await service.update(current.id, { townshipId, riderId }, 'actor-1', 'role-1');
@@ -468,9 +551,6 @@ describe('OrdersService', () => {
       id: townshipId,
       leadTimeDays: 2,
       defaultDeliveryFee: '0.00',
-      defaultAssigneeType: null,
-      defaultRiderId: null,
-      defaultPartnerId: null,
     });
     prepareUpdateTransaction(current);
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -558,41 +638,6 @@ describe('OrdersService', () => {
     expect(result).toMatchObject({ status: 'PENDING', assigneeType: null, riderId: null, partnerId: null });
   });
 
-  it('clears the assignee when applying a township with no default and keeps an explicit rider override', async () => {
-    const townshipId = '77777777-7777-4777-8777-777777777777';
-    const current = baseOrder({
-      townshipId: '88888888-8888-4888-8888-888888888888',
-      assigneeType: 'RIDER',
-      riderId: '66666666-6666-4666-8666-666666666666',
-      status: 'ASSIGNED',
-    });
-    queryTownships.findFirst.mockResolvedValue({ id: townshipId, leadTimeDays: 0, defaultAssigneeType: null, defaultRiderId: null, defaultPartnerId: null });
-    prepareUpdateTransaction(current);
-
-    const cleared = await service.update(current.id, { townshipId, applyTownshipAssignee: true }, 'actor-1', 'role-1');
-    expect(cleared).toMatchObject({ status: 'PENDING', assigneeType: null, riderId: null, partnerId: null });
-
-    vi.resetAllMocks();
-    const secondCurrent = baseOrder({
-      townshipId: '88888888-8888-4888-8888-888888888888',
-      assigneeType: 'RIDER',
-      riderId: '66666666-6666-4666-8666-666666666666',
-      status: 'ASSIGNED',
-    });
-    const explicitRiderId = '99999999-9999-4999-8999-999999999999';
-    queryTownships.findFirst.mockResolvedValue({ id: townshipId, leadTimeDays: 0, defaultAssigneeType: null, defaultRiderId: null, defaultPartnerId: null });
-    queryRiders.findFirst.mockResolvedValue({ id: explicitRiderId });
-    prepareUpdateTransaction(secondCurrent);
-
-    const overridden = await service.update(
-      secondCurrent.id,
-      { townshipId, applyTownshipAssignee: true, riderId: explicitRiderId },
-      'actor-1',
-      'role-1',
-    );
-    expect(overridden).toMatchObject({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId: explicitRiderId, partnerId: null });
-  });
-
   it('does not touch an assigned rider or status when only notes change', async () => {
     const riderId = '66666666-6666-4666-8666-666666666666';
     const current = baseOrder({ assigneeType: 'RIDER', riderId, status: 'ASSIGNED' });
@@ -603,5 +648,80 @@ describe('OrdersService', () => {
     expect(result).toMatchObject({ status: 'ASSIGNED', assigneeType: 'RIDER', riderId, notes: 'Updated note' });
     expect(orderState.applyTransitionInTransaction).not.toHaveBeenCalled();
     expect(auditValues).toHaveBeenCalledWith([expect.objectContaining({ field: 'notes' })]);
+  });
+
+  describe('shop advance', () => {
+    const actorId = '77777777-7777-4777-8777-777777777777';
+    const roleId = '88888888-8888-4888-8888-888888888888';
+
+    it('snapshots the package price instead of following a later edit', async () => {
+      const current = baseOrder({ packagePrice: '47000.00', status: 'ASSIGNED' });
+      const { updateValues } = prepareSettlementTransaction(current);
+
+      const result = await service.recordShopAdvance(current.id, {}, actorId, roleId);
+
+      // The column is written from the row's own packagePrice, not from input.
+      expect(updateValues).toHaveBeenCalledWith(expect.objectContaining({ shopAdvanceAmount: '47000.00' }));
+      expect(result.shopAdvanceAmount).toBe('47000.00');
+      expect(result.shopAdvancedAt).not.toBeNull();
+
+      // A later packagePrice edit must not be able to restate it: recording
+      // again is refused, so the snapshot cannot drift.
+      const edited = baseOrder({ packagePrice: '90000.00', shopAdvanceAmount: '47000.00', shopAdvancedAt: new Date('2026-10-18T00:00:00.000Z') });
+      prepareSettlementTransaction(edited);
+      await expect(service.recordShopAdvance(edited.id, {}, actorId, roleId)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('refuses to advance an order whose customer already paid the shop', async () => {
+      const current = baseOrder({ packagePrice: '47000.00', isPackagePaidToShop: true, status: 'ASSIGNED' });
+      prepareSettlementTransaction(current);
+
+      await expect(service.recordShopAdvance(current.id, {}, actorId, roleId)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('refuses to clear an advance once the order is cancelled', async () => {
+      const current = baseOrder({
+        status: 'CANCELLED',
+        shopAdvanceAmount: '47000.00',
+        shopAdvancedAt: new Date('2026-10-18T00:00:00.000Z'),
+      });
+      prepareSettlementTransaction(current);
+
+      await expect(service.clearShopAdvance(current.id, {}, actorId, roleId)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('requires orders.update_after_approval and a reason on a delivered order', async () => {
+      const current = baseOrder({ packagePrice: '47000.00', status: 'DELIVERED' });
+      prepareSettlementTransaction(current);
+
+      // Holds orders.shop_settlement (the route guard) but not the post-approval key.
+      permissions.getEffectivePermissions.mockResolvedValue(['orders.shop_settlement']);
+      await expect(service.recordShopAdvance(current.id, { reason: 'Paid in cash' }, actorId, roleId)).rejects.toBeInstanceOf(ForbiddenException);
+
+      permissions.getEffectivePermissions.mockResolvedValue(['orders.shop_settlement', 'orders.update_after_approval']);
+      await expect(service.recordShopAdvance(current.id, {}, actorId, roleId)).rejects.toBeInstanceOf(BadRequestException);
+
+      const { updateValues } = prepareSettlementTransaction(current);
+      await service.recordShopAdvance(current.id, { reason: 'Paid in cash' }, actorId, roleId);
+      expect(updateValues).toHaveBeenCalled();
+    });
+
+    it('clears the advance and audits both columns', async () => {
+      const current = baseOrder({
+        status: 'ASSIGNED',
+        shopAdvanceAmount: '47000.00',
+        shopAdvancedAt: new Date('2026-10-18T00:00:00.000Z'),
+      });
+      const { updateValues, auditValues } = prepareSettlementTransaction(current);
+
+      const result = await service.clearShopAdvance(current.id, {}, actorId, roleId);
+
+      expect(updateValues).toHaveBeenCalledWith(expect.objectContaining({ shopAdvanceAmount: '0', shopAdvancedAt: null }));
+      expect(result.shopAdvancedAt).toBeNull();
+      expect(auditValues).toHaveBeenCalledWith([
+        expect.objectContaining({ field: 'shopAdvanceAmount' }),
+        expect.objectContaining({ field: 'shopAdvancedAt' }),
+      ]);
+    });
   });
 });

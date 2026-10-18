@@ -13,6 +13,8 @@ import {
   eq,
   exists,
   ilike,
+  inArray,
+  ne,
   or,
   sql,
   type SQL,
@@ -30,6 +32,7 @@ import { RiderOrderResponseDto } from '../riders/dto/rider-order-response.dto.js
 import { calculateCodToCollect } from '../riders/rider-order-money.util.js';
 import { shops } from '../shops/shop.schema.js';
 import { townships } from '../townships/township.schema.js';
+import { users } from '../users/user.schema.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { AssignOrderDto } from './dto/assign-order.dto.js';
 import { ListOrdersQueryDto } from './dto/list-orders-query.dto.js';
@@ -40,6 +43,7 @@ import { OrderListResponseDto } from './dto/order-list-response.dto.js';
 import { OrderReasonDto } from './dto/order-reason.dto.js';
 import { OrderResponseDto } from './dto/order-response.dto.js';
 import { SendBackOrderDto } from './dto/send-back-order.dto.js';
+import { ShopAdvanceDto } from './dto/shop-advance.dto.js';
 import { UpdateOrderDto } from './dto/update-order.dto.js';
 import { orderFieldAudit } from './order-field-audit.schema.js';
 import { OrderStateService } from './order-state.service.js';
@@ -53,6 +57,12 @@ import {
 import { generateTrackingCode } from './tracking-code.util.js';
 
 const MAX_TRACKING_CODE_ATTEMPTS = 3;
+/**
+ * Fields whose value is money and must keep its decimal string through audit
+ * serialisation. `shopAdvanceAmount` is not editable through `PATCH /orders/:id`
+ * — it is written only by the shop-advance endpoints — but it belongs here so a
+ * future edit path cannot silently stringify it as a number.
+ */
 const MONEY_FIELDS = [
   'packagePrice',
   'deliveryFee',
@@ -60,10 +70,36 @@ const MONEY_FIELDS = [
   'isFeePaidToShop',
   'partnerFee',
   'commissionFee',
+  'shopAdvanceAmount',
 ] as const;
 
 type OrderRow = typeof orders.$inferSelect;
 type OrderHistoryRow = typeof orderStatusHistory.$inferSelect;
+type OrderHistoryRowWithActor = OrderHistoryRow & {
+  changedByName: string | null;
+};
+
+/**
+ * Audited fields whose value is a reference to another record. The raw id is
+ * meaningless to an office reader — and an officer holds `orders.read` without
+ * `shops.read` / `customers.read` / `riders.read`, so a client cannot resolve
+ * it — which is why `getAudit` swaps these for the referenced record's name.
+ */
+const AUDIT_IDENTIFIER_FIELDS = [
+  'shopId',
+  'customerId',
+  'townshipId',
+  'riderId',
+  'partnerId',
+] as const;
+
+type AuditIdentifierField = (typeof AUDIT_IDENTIFIER_FIELDS)[number];
+
+function isAuditIdentifierField(
+  field: string,
+): field is AuditIdentifierField {
+  return (AUDIT_IDENTIFIER_FIELDS as readonly string[]).includes(field);
+}
 type OrderChanges = Partial<Omit<typeof orders.$inferInsert, 'id' | 'trackingCode' | 'status' | 'createdAt'>>;
 type AssigneeSelection = {
   type: AssigneeType | null;
@@ -89,6 +125,8 @@ export function toOrderResponse(row: OrderRow, timeZone = 'Asia/Yangon'): OrderR
     isFeePaidToShop: row.isFeePaidToShop,
     partnerFee: row.partnerFee,
     commissionFee: row.commissionFee,
+    shopAdvanceAmount: row.shopAdvanceAmount,
+    shopAdvancedAt: row.shopAdvancedAt?.toISOString() ?? null,
     estimatedDeliveryDate: row.estimatedDeliveryDate ? getDateInTimeZone(row.estimatedDeliveryDate, timeZone) : null,
     deliveredAt: row.deliveredAt?.toISOString() ?? null,
     deliveryAddress: row.deliveryAddress,
@@ -100,13 +138,16 @@ export function toOrderResponse(row: OrderRow, timeZone = 'Asia/Yangon'): OrderR
   };
 }
 
-export function toOrderHistoryResponse(row: OrderHistoryRow): OrderHistoryResponseDto {
+export function toOrderHistoryResponse(
+  row: OrderHistoryRowWithActor,
+): OrderHistoryResponseDto {
   return {
     id: row.id,
     orderId: row.orderId,
     fromStatus: row.fromStatus,
     toStatus: row.toStatus,
     changedBy: row.changedBy,
+    changedByName: row.changedByName,
     note: row.note,
     reason: row.reason,
     internalNote: row.internalNote,
@@ -193,6 +234,23 @@ export class OrdersService {
     if (query.assigneeId) {
       conditions.push(or(eq(orders.riderId, query.assigneeId), eq(orders.partnerId, query.assigneeId)) as SQL);
     }
+    if (query.isPackagePaidToShop !== undefined) {
+      conditions.push(eq(orders.isPackagePaidToShop, query.isPackagePaidToShop));
+    }
+    if (query.shopAdvance === 'ADVANCED') {
+      conditions.push(sql`${orders.shopAdvancedAt} is not null`);
+    }
+    if (query.shopAdvance === 'NOT_ADVANCED') {
+      /**
+       * A work list, not a null scan: an advance is only due where the customer
+       * has not prepaid the package, and a cancelled order is never owed one.
+       */
+      conditions.push(and(
+        sql`${orders.shopAdvancedAt} is null`,
+        eq(orders.isPackagePaidToShop, false),
+        ne(orders.status, 'CANCELLED'),
+      ) as SQL);
+    }
     const dateColumn = query.dateBasis === 'DELIVERED' ? orders.deliveredAt : orders.createdAt;
     if (query.dateFrom) conditions.push(sql`(${dateColumn} at time zone ${this.timeZone})::date >= ${query.dateFrom.slice(0, 10)}::date`);
     if (query.dateTo) conditions.push(sql`(${dateColumn} at time zone ${this.timeZone})::date <= ${query.dateTo.slice(0, 10)}::date`);
@@ -207,7 +265,66 @@ export class OrdersService {
 
   async getById(id: string): Promise<OrderDetailResponseDto> {
     const row = await this.orderOrThrow(id);
-    return { ...toOrderResponse(row, this.timeZone), history: await this.historyForOrder(id) };
+    return {
+      ...toOrderResponse(row, this.timeZone),
+      ...(await this.namesForOrder(row)),
+      history: await this.historyForOrder(id),
+    };
+  }
+
+  /**
+   * The names a reader needs but cannot always fetch for themselves: an officer
+   * holds `orders.read` while `shops.read`, `customers.read` and `riders.read`
+   * are elsewhere. Null means the referenced row could not be resolved, never a
+   * fabricated name.
+   */
+  private async namesForOrder(row: OrderRow): Promise<{
+    shopName: string | null;
+    customerName: string | null;
+    townshipName: string | null;
+    assigneeName: string | null;
+  }> {
+    const [shopRow, customerRow, townshipRow, riderRow, partnerRow] =
+      await Promise.all([
+        this.database.db
+          .select({ name: shops.name })
+          .from(shops)
+          .where(eq(shops.id, row.shopId)),
+        this.database.db
+          .select({ name: customers.name })
+          .from(customers)
+          .where(eq(customers.id, row.customerId)),
+        row.townshipId
+          ? this.database.db
+              .select({ name: townships.name })
+              .from(townships)
+              .where(eq(townships.id, row.townshipId))
+          : Promise.resolve([]),
+        row.riderId
+          ? this.database.db
+              .select({ name: users.name })
+              .from(riders)
+              .innerJoin(users, eq(users.id, riders.userId))
+              .where(eq(riders.id, row.riderId))
+          : Promise.resolve([]),
+        row.partnerId
+          ? this.database.db
+              .select({ name: deliveryPartners.name })
+              .from(deliveryPartners)
+              .where(eq(deliveryPartners.id, row.partnerId))
+          : Promise.resolve([]),
+      ]);
+    return {
+      shopName: shopRow[0]?.name ?? null,
+      customerName: customerRow[0]?.name ?? null,
+      townshipName: townshipRow[0]?.name ?? null,
+      assigneeName:
+        row.assigneeType === 'RIDER'
+          ? (riderRow[0]?.name ?? null)
+          : row.assigneeType === 'PARTNER'
+            ? (partnerRow[0]?.name ?? null)
+            : null,
+    };
   }
 
   async getHistory(id: string): Promise<OrderHistoryResponseDto[]> {
@@ -228,19 +345,94 @@ export class OrdersService {
       createdAt: orderFieldAudit.createdAt,
     }).from(orderFieldAudit)
       .where(eq(orderFieldAudit.orderId, id)).orderBy(asc(orderFieldAudit.createdAt));
-    return rows.map((row) => ({
+    const entries = rows.map((row) => ({
       ...row,
       oldValue: row.oldValue === null ? null : JSON.parse(row.oldValue) as unknown,
       newValue: row.newValue === null ? null : JSON.parse(row.newValue) as unknown,
       createdAt: row.createdAt.toISOString(),
     }));
+    return this.withResolvedIdentifiers(entries);
+  }
+
+  private async withResolvedIdentifiers(
+    rows: OrderFieldAuditResponseDto[],
+  ): Promise<OrderFieldAuditResponseDto[]> {
+    const idsByField = new Map<AuditIdentifierField, Set<string>>();
+    for (const row of rows) {
+      if (!isAuditIdentifierField(row.field)) continue;
+      for (const value of [row.oldValue, row.newValue]) {
+        if (typeof value !== 'string') continue;
+        const ids = idsByField.get(row.field) ?? new Set<string>();
+        ids.add(value);
+        idsByField.set(row.field, ids);
+      }
+    }
+    if (idsByField.size === 0) return rows;
+
+    const names = new Map<string, string>();
+    await Promise.all(
+      [...idsByField].map(async ([field, ids]) => {
+        const resolved = await this.lookupAuditNames(field, [...ids]);
+        for (const { id, name } of resolved) names.set(`${field}:${id}`, name);
+      }),
+    );
+
+    /** A dangling id (a rider deleted after being unassigned) has no name left. */
+    const resolve = (field: AuditIdentifierField, value: unknown): unknown =>
+      typeof value === 'string'
+        ? (names.get(`${field}:${value}`) ?? 'Unknown')
+        : value;
+
+    return rows.map((row) =>
+      isAuditIdentifierField(row.field)
+        ? {
+            ...row,
+            oldValue: resolve(row.field, row.oldValue),
+            newValue: resolve(row.field, row.newValue),
+          }
+        : row,
+    );
+  }
+
+  private async lookupAuditNames(
+    field: AuditIdentifierField,
+    ids: string[],
+  ): Promise<Array<{ id: string; name: string }>> {
+    switch (field) {
+      case 'shopId':
+        return this.database.db
+          .select({ id: shops.id, name: shops.name })
+          .from(shops)
+          .where(inArray(shops.id, ids));
+      case 'customerId':
+        return this.database.db
+          .select({ id: customers.id, name: customers.name })
+          .from(customers)
+          .where(inArray(customers.id, ids));
+      case 'townshipId':
+        return this.database.db
+          .select({ id: townships.id, name: townships.name })
+          .from(townships)
+          .where(inArray(townships.id, ids));
+      case 'partnerId':
+        return this.database.db
+          .select({ id: deliveryPartners.id, name: deliveryPartners.name })
+          .from(deliveryPartners)
+          .where(inArray(deliveryPartners.id, ids));
+      case 'riderId':
+        return this.database.db
+          .select({ id: riders.id, name: users.name })
+          .from(riders)
+          .innerJoin(users, eq(users.id, riders.userId))
+          .where(inArray(riders.id, ids));
+    }
   }
 
   async create(input: CreateOrderDto, changedBy: string): Promise<OrderResponseDto> {
     await this.assertShopExists(input.shopId);
     await this.assertCustomerExists(input.customerId);
     const township = input.townshipId ? await this.townshipOrThrow(input.townshipId) : null;
-    const assignee = await this.resolveCreateAssignee(input, township);
+    const assignee = await this.resolveCreateAssignee(input);
     const initialStatus: OrderStatus = assignee.type === null ? 'PENDING' : 'ASSIGNED';
     const estimatedDeliveryDate = input.estimatedDeliveryDate !== undefined
       ? dateToString(input.estimatedDeliveryDate)
@@ -323,11 +515,6 @@ export class OrdersService {
       }
       if (input.applyTownshipFee && input.deliveryFee === undefined) candidateFields.deliveryFee = township.defaultDeliveryFee;
       if (input.applyTownshipFee && input.commissionFee === undefined) candidateFields.commissionFee = township.defaultCommissionFee;
-      if (input.applyTownshipAssignee) {
-        candidateFields.assigneeType = township.defaultAssigneeType;
-        candidateFields.riderId = township.defaultRiderId;
-        candidateFields.partnerId = township.defaultPartnerId;
-      }
     }
     if (input.riderId !== undefined || input.partnerId !== undefined) {
       const assignment = this.assigneeFromInput(input.riderId, input.partnerId);
@@ -513,6 +700,118 @@ export class OrdersService {
     return toOrderResponse(await this.orderOrThrow(id), this.timeZone);
   }
 
+  /**
+   * Record that the company paid this shop the package price for this order.
+   *
+   * The amount is a snapshot of `packagePrice` taken here and is never an input:
+   * the design's anti-goals forbid writing the column as anything else, and a
+   * later `packagePrice` edit must not restate money that already moved.
+   */
+  async recordShopAdvance(id: string, input: ShopAdvanceDto, actorId: string, roleId: string): Promise<OrderResponseDto> {
+    const updated = await this.database.db.transaction(async (transaction) => {
+      const [current] = await transaction.select().from(orders).where(eq(orders.id, id)).for('update');
+      if (!current) throw new NotFoundException(`Order '${id}' not found`);
+      if (current.isPackagePaidToShop) {
+        throw new ConflictException('No advance is due: the customer already paid the shop for this package');
+      }
+      if (current.shopAdvancedAt !== null) {
+        throw new ConflictException('An advance is already recorded for this order; clear it before recording another');
+      }
+      await this.assertShopSettlementAfterApprovalAllowed(current, input.reason, roleId);
+      const advancedAt = new Date();
+      const [row] = await transaction.update(orders).set({
+        shopAdvanceAmount: current.packagePrice,
+        shopAdvancedAt: advancedAt,
+        updatedAt: advancedAt,
+      }).where(eq(orders.id, id)).returning();
+      if (!row) throw new NotFoundException(`Order '${id}' not found`);
+      await transaction.insert(orderFieldAudit).values([
+        {
+          orderId: id,
+          field: 'shopAdvanceAmount',
+          oldValue: toAuditJson(current.shopAdvanceAmount, true),
+          newValue: toAuditJson(row.shopAdvanceAmount, true),
+          actorId,
+          reason: input.reason ?? null,
+        },
+        {
+          orderId: id,
+          field: 'shopAdvancedAt',
+          oldValue: toAuditJson(current.shopAdvancedAt, false),
+          newValue: toAuditJson(row.shopAdvancedAt, false),
+          actorId,
+          reason: input.reason ?? null,
+        },
+      ]);
+      return row;
+    });
+    return toOrderResponse(updated, this.timeZone);
+  }
+
+  /**
+   * Clear a recorded advance, correcting a mistake.
+   *
+   * Refused on a cancelled order: once the delivery is off, that advance is
+   * money the shop owes back, and Phase 2's reclaim reports it — so it must not
+   * be erasable from here. The guard costs nothing today and keeps that
+   * recovery from being deleted by a settlement caller.
+   */
+  async clearShopAdvance(id: string, input: ShopAdvanceDto, actorId: string, roleId: string): Promise<OrderResponseDto> {
+    const updated = await this.database.db.transaction(async (transaction) => {
+      const [current] = await transaction.select().from(orders).where(eq(orders.id, id)).for('update');
+      if (!current) throw new NotFoundException(`Order '${id}' not found`);
+      if (current.shopAdvancedAt === null) {
+        throw new ConflictException('No advance is recorded for this order');
+      }
+      if (current.status === 'CANCELLED') {
+        throw new ConflictException('The advance on a cancelled order is money the shop owes back and cannot be cleared');
+      }
+      await this.assertShopSettlementAfterApprovalAllowed(current, input.reason, roleId);
+      const clearedAt = new Date();
+      const [row] = await transaction.update(orders).set({
+        shopAdvanceAmount: '0',
+        shopAdvancedAt: null,
+        updatedAt: clearedAt,
+      }).where(eq(orders.id, id)).returning();
+      if (!row) throw new NotFoundException(`Order '${id}' not found`);
+      await transaction.insert(orderFieldAudit).values([
+        {
+          orderId: id,
+          field: 'shopAdvanceAmount',
+          oldValue: toAuditJson(current.shopAdvanceAmount, true),
+          newValue: toAuditJson('0', true),
+          actorId,
+          reason: input.reason ?? null,
+        },
+        {
+          orderId: id,
+          field: 'shopAdvancedAt',
+          oldValue: toAuditJson(current.shopAdvancedAt, false),
+          newValue: toAuditJson(null, false),
+          actorId,
+          reason: input.reason ?? null,
+        },
+      ]);
+      return row;
+    });
+    return toOrderResponse(updated, this.timeZone);
+  }
+
+  /**
+   * An advance is a settled cost. Changing one on a `DELIVERED` order follows
+   * the same rule as every other post-approval money edit: the caller needs
+   * `orders.update_after_approval` and a reason. Holding
+   * `orders.shop_settlement` is not a bypass.
+   */
+  private async assertShopSettlementAfterApprovalAllowed(order: OrderRow, reason: string | undefined, roleId: string): Promise<void> {
+    if (order.status !== 'DELIVERED') return;
+    const effectivePermissions = await this.permissions.getEffectivePermissions(roleId);
+    if (!effectivePermissions.includes('orders.update_after_approval')) {
+      throw new ForbiddenException('Changing the shop advance after approval requires orders.update_after_approval');
+    }
+    if (!reason?.trim()) throw new BadRequestException('A reason is required when changing the shop advance after approval');
+  }
+
   async submitRiderDelivered(id: string, userId: string): Promise<RiderDeliveredResponseDto> {
     const rider = await this.database.db.query.riders.findFirst({ where: eq(riders.userId, userId), columns: { id: true } });
     if (!rider) throw new ForbiddenException('Authenticated user is not a rider');
@@ -638,10 +937,7 @@ export class OrdersService {
     return toOrderResponse(await this.orderOrThrow(id), this.timeZone);
   }
 
-  private async resolveCreateAssignee(
-    input: CreateOrderDto,
-    township: typeof townships.$inferSelect | null,
-  ): Promise<AssigneeSelection> {
+  private async resolveCreateAssignee(input: CreateOrderDto): Promise<AssigneeSelection> {
     if (input.riderId !== undefined || input.partnerId !== undefined) {
       if (input.riderId !== undefined && input.partnerId !== undefined) {
         throw new BadRequestException('Provide riderId or partnerId, not both');
@@ -650,14 +946,11 @@ export class OrdersService {
       await this.assertAssigneeExists(assignment.type, assignment.riderId, assignment.partnerId);
       return assignment;
     }
-    if (!township || township.defaultAssigneeType === null) return { type: null, riderId: null, partnerId: null };
-    const assignment: AssigneeSnapshot = {
-      type: township.defaultAssigneeType,
-      riderId: township.defaultRiderId,
-      partnerId: township.defaultPartnerId,
-    };
-    await this.assertAssigneeExists(assignment.type, assignment.riderId, assignment.partnerId);
-    return assignment;
+    /**
+     * A township carries money and lead-time defaults only — it never names an
+     * assignee, so an order with no explicit rider or partner starts unassigned.
+     */
+    return { type: null, riderId: null, partnerId: null };
   }
 
   private assigneeFromInput(riderId: string | null | undefined, partnerId: string | null | undefined): AssigneeSelection {
@@ -687,8 +980,25 @@ export class OrdersService {
   }
 
   private async historyForOrder(orderId: string): Promise<OrderHistoryResponseDto[]> {
-    const rows = await this.database.db.select().from(orderStatusHistory)
-      .where(eq(orderStatusHistory.orderId, orderId)).orderBy(asc(orderStatusHistory.createdAt));
+    const rows = await this.database.db
+      .select({
+        id: orderStatusHistory.id,
+        orderId: orderStatusHistory.orderId,
+        fromStatus: orderStatusHistory.fromStatus,
+        toStatus: orderStatusHistory.toStatus,
+        changedBy: orderStatusHistory.changedBy,
+        changedByName: users.name,
+        note: orderStatusHistory.note,
+        reason: orderStatusHistory.reason,
+        internalNote: orderStatusHistory.internalNote,
+        previousAssignee: orderStatusHistory.previousAssignee,
+        newAssignee: orderStatusHistory.newAssignee,
+        createdAt: orderStatusHistory.createdAt,
+      })
+      .from(orderStatusHistory)
+      .leftJoin(users, eq(users.id, orderStatusHistory.changedBy))
+      .where(eq(orderStatusHistory.orderId, orderId))
+      .orderBy(asc(orderStatusHistory.createdAt));
     return rows.map(toOrderHistoryResponse);
   }
 

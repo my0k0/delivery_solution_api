@@ -31,8 +31,6 @@ export class UpdateOrderDto {
   @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsString() @MaxLength(2000) notes?: string | null;
   @ApiPropertyOptional({ description: 'Apply the new township default delivery fee' })
   @IsOptional() @IsBoolean() applyTownshipFee?: boolean;
-  @ApiPropertyOptional({ description: 'Apply the new township default assignee' })
-  @IsOptional() @IsBoolean() applyTownshipAssignee?: boolean;
   @ApiPropertyOptional({ nullable: true, description: 'Audit reason for changed fields' })
   @IsOptional() @IsString() @MaxLength(1000) reason?: string | null;
 }

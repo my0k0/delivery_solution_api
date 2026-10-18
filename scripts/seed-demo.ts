@@ -666,47 +666,29 @@ async function main(): Promise<void> {
         fee: '3500.00',
         commission: '500.00',
         leadTimeDays: 1,
-        assigneeType: 'RIDER',
-        riderIndex: 0,
-        partnerIndex: null,
       },
       {
         name: 'Demo North',
         fee: '4500.00',
         commission: '700.00',
         leadTimeDays: 2,
-        assigneeType: 'PARTNER',
-        riderIndex: null,
-        partnerIndex: 0,
       },
       {
         name: 'Demo South',
         fee: '5000.00',
         commission: '600.00',
         leadTimeDays: 3,
-        assigneeType: null,
-        riderIndex: null,
-        partnerIndex: null,
       },
     ] as const;
     const townshipIds: string[] = [];
     for (const township of townshipDefinitions) {
-      const riderId =
-        township.riderIndex === null ? null : riderIds[township.riderIndex];
-      const partnerId =
-        township.partnerIndex === null
-          ? null
-          : partnerIds[township.partnerIndex];
       const [row] = await transaction<{ id: string }[]>`
-        insert into townships (name, default_delivery_fee, default_commission_fee, lead_time_days, default_assignee_type, default_rider_id, default_partner_id)
-        values (${township.name}, ${township.fee}, ${township.commission}, ${township.leadTimeDays}, ${township.assigneeType}, ${riderId}, ${partnerId})
+        insert into townships (name, default_delivery_fee, default_commission_fee, lead_time_days)
+        values (${township.name}, ${township.fee}, ${township.commission}, ${township.leadTimeDays})
         on conflict (name) do update set
           default_delivery_fee = excluded.default_delivery_fee,
           default_commission_fee = excluded.default_commission_fee,
           lead_time_days = excluded.lead_time_days,
-          default_assignee_type = excluded.default_assignee_type,
-          default_rider_id = excluded.default_rider_id,
-          default_partner_id = excluded.default_partner_id,
           updated_at = now()
         returning id
       `;

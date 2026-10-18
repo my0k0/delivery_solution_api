@@ -83,6 +83,17 @@ export const orders = pgTable(
     commissionFee: numeric('commission_fee', { precision: 12, scale: 2 })
       .notNull()
       .default('0'),
+    /**
+     * What the company actually paid this shop for this order, snapshotted from
+     * `packagePrice` at the moment of the advance. Never follows a later
+     * `packagePrice` edit — money that moved does not change retroactively, and
+     * Phase 2's reclaim subtracts from this value.
+     */
+    shopAdvanceAmount: numeric('shop_advance_amount', { precision: 12, scale: 2 })
+      .notNull()
+      .default('0'),
+    /** `null` = not yet advanced. Always written together with the amount. */
+    shopAdvancedAt: timestamp('shop_advanced_at', { withTimezone: true }),
     estimatedDeliveryDate: date('estimated_delivery_date', { mode: 'date' }),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     deliveryAddress: text('delivery_address'),
@@ -110,5 +121,7 @@ export const orders = pgTable(
     index('orders_delivered_at_idx').on(table.deliveredAt),
     index('orders_township_idx').on(table.townshipId),
     index('orders_rider_idx').on(table.riderId),
+    /** Supports the "not yet advanced for this shop" work list. */
+    index('orders_shop_advance_idx').on(table.shopId, table.shopAdvancedAt),
   ],
 );

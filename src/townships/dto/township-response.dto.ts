@@ -1,5 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import type { TownshipDefaultAssigneeType } from '../township.schema.js';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class TownshipResponseDto {
   @ApiProperty() id: string;
@@ -7,9 +6,6 @@ export class TownshipResponseDto {
   @ApiProperty() defaultDeliveryFee: string;
   @ApiProperty() defaultCommissionFee: string;
   @ApiProperty() leadTimeDays: number;
-  @ApiPropertyOptional({ nullable: true }) defaultAssigneeType: TownshipDefaultAssigneeType | null;
-  @ApiPropertyOptional({ nullable: true }) defaultRiderId: string | null;
-  @ApiPropertyOptional({ nullable: true }) defaultPartnerId: string | null;
   @ApiProperty() createdAt: string;
   @ApiProperty() updatedAt: string;
 }
