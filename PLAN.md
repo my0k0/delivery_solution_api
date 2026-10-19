@@ -12,12 +12,13 @@ This plan records the implemented API and the remaining gated work. All new work
 - **Phase 6 — Returns/payment ledger/reconciliation:** blocked
 - **Phase 7 — Notifications/Viber:** later
 - **Phase 8 — Reports:** partially implemented in phases D/E; additional scope remains
-- **Permission catalog:** 13 modules / 42 fixed keys, defined by `src/common/auth/permission-keys.ts`
+- **Rider handovers (2026-10-20):** complete — cash accepted from riders, per-rider balance, and an audited correction path; see `docs/delivery-workflow-v2.md` → *As built*
+- **Permission catalog:** 14 modules / 46 fixed keys, defined by `src/common/auth/permission-keys.ts`
 
 ## Implemented workflow v2 phases
 
 - **A — Schema, state machine, permissions:** new order fields and history/audit tables, townships, delivery partners, commission defaults, revised order states, fixed permission catalog and SHOP role are implemented. The database reset/reseed workflow is available through `pnpm db:reset` and `pnpm db:seed`.
-- **B — Office orders and approval:** order creation/edit/audit, assignment, postponement, cancellation, approval, send-back, and partner delivered operations are implemented, along with township and delivery-partner CRUD.
+- **B — Office orders and approval:** order creation/edit/audit, assignment, postponement, cancellation, approval, send-back, and partner delivered operations are implemented, along with township and delivery-partner CRUD. An order that has ended (`DELIVERED` or `CANCELLED`) can no longer be edited: `PATCH /orders/:id` answers 409, and "ended" is derived from the transition matrix rather than a second hard-coded list.
 - **C — Commission:** per-order rider commission (prefilled from the township's required `defaultCommissionFee`, overridable per order) and rider delivery submission are implemented. The earlier per-way model, its settings, and pay-anyway recording were **removed on 2026-10-18**.
 - **D — Reports and dashboards:** order, shop statement, rider collection, rider payout, office dashboard, and rider dashboard APIs are implemented; report exports support CSV/XLSX.
 - **E — Shop portal:** shop-scoped orders, detail/history, dashboard, statement, and CSV/XLSX exports are implemented with dedicated shop DTOs.
@@ -28,7 +29,9 @@ The live API paths, shop display mapping, report definitions, and implementation
 
 Orders have a single terminal `CANCELLED` state, reached from `PENDING` or `ASSIGNED` with a required reason; cancelling covers both a called-off delivery and a package that came back to the shop. Whether the goods physically returned is deliberately not tracked, and there is no separate returns module or return-record workflow. COD and net owed to a shop are currently **derived** from `packagePrice`, `deliveryFee`, `isPackagePaidToShop`, and `isFeePaidToShop`; delivery/approval status determines whether an amount is expected or treated as collected. The legacy `orders.codAmount` column remains in the schema but is not read by application code.
 
-There is **no payment ledger, no reconciliation model/process, no shop-prepayment record, and no cash-received record**. Reports are projections of order flags, statuses, and commission fields—not financial transaction history. Phase 6 remains blocked pending approved domain decisions and an ADR; do not infer ledger semantics from these projections.
+There is **no payment ledger, no reconciliation model/process, and no shop-prepayment record**. Rider → office cash *is* recorded (`rider_handovers`, 2026-10-20), but as an aggregate receipt with a running balance: it is not reconciled against orders and it is not a ledger. Reports are projections of order flags, statuses, and commission fields—not financial transaction history. Phase 6 remains blocked pending approved domain decisions and an ADR; do not infer ledger semantics from these projections.
+
+There is no **rider remittance** record either. Approving a rider-submitted delivery (`AWAITING_APPROVAL → DELIVERED`) confirms the delivery and is the point at which the order's COD moves from the "awaiting approval" figure into "expected to hand back" in `GET /reports/rider-collection`; it records no cash. Nothing in the schema, DTOs, or endpoints says that a rider handed money over, so no report can show what a rider has actually returned.
 
 ## Phase 7 — Notifications and Viber — LATER
 

@@ -62,7 +62,7 @@ E2E requires `docker compose up -d` and writes to the Compose Postgres database.
 
 - `src/app.module.ts` registers global JWT authentication and permission guards. Every route needs a bearer token unless marked `@Public()`.
 - Protected routes declare `@RequirePermissions('module.action')`; use only keys in `src/common/auth/permission-keys.ts`.
-- The permission catalog is fixed: **13 modules / 42 keys** (`users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`). Permission keys are seeded and cannot be created/deleted at runtime; role grants can be replaced.
+- The permission catalog is fixed: **14 modules / 46 keys** (`users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`, `rider-handovers`). Permission keys are seeded and cannot be created/deleted at runtime; role grants can be replaced.
 - Seed roles are `OWNER`, `ADMIN`, `OFFICER`, `RIDER`, and `SHOP`. `scripts/seed.ts` is authoritative for the exact grants. OWNER is a system role and receives the whole current catalog.
 - Never expose `passwordHash`. Authentication uses access tokens; the auth guard rebuilds the active user from the database.
 

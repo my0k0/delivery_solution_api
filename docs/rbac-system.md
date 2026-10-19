@@ -8,7 +8,7 @@ Authorization follows `user → role → permission grants`. A user's `role_id` 
 
 ## Fixed permission catalog
 
-`src/common/auth/permission-keys.ts` is the source of truth for the catalog. It defines a literal `PermissionKey` union and **13 modules / 42 permission keys**:
+`src/common/auth/permission-keys.ts` is the source of truth for the catalog. It defines a literal `PermissionKey` union and **14 modules / 46 permission keys**:
 
 | Module | Actions |
 |---|---|
@@ -18,13 +18,14 @@ Authorization follows `user → role → permission grants`. A user's `role_id` 
 | `shops` | `create`, `read`, `update`, `delete` |
 | `customers` | `create`, `read`, `update`, `delete` |
 | `riders` | `create`, `read`, `update`, `delete` |
-| `orders` | `create`, `read`, `update`, `cancel`, `update_after_approval` |
+| `orders` | `create`, `read`, `update`, `cancel`, `update_after_approval`, `shop_settlement` |
 | `deliveries` | `read`, `update`, `approve` |
 | `townships` | `create`, `read`, `update`, `delete` |
 | `partners` | `create`, `read`, `update`, `delete` |
 | `shop-portal` | `read` |
 | `shop-reports` | `export` |
 | `reports` | `read`, `export` |
+| `rider-handovers` | `create`, `read`, `update` |
 
 The seed script synchronizes database catalog rows from this list. `GET /api/v1/permissions` reads the catalog grouped by module. There are no endpoints or permission keys for creating or deleting catalog entries. Adding a key is a code change followed by reseeding; do not treat a role grant as a new permission definition.
 
@@ -37,8 +38,8 @@ The seed script synchronizes database catalog rows from this list. `GET /api/v1/
 | Role | Seeded effective grants |
 |---|---|
 | `OWNER` | Entire current catalog. System roles short-circuit grant-row lookup, so OWNER has no `role_permissions` rows. |
-| `ADMIN` | All 42 catalog keys. |
-| `OFFICER` | `orders.create`, `orders.read`, `orders.update`, `orders.cancel`, `orders.update_after_approval`; `deliveries.read`, `deliveries.update`, `deliveries.approve`; `townships.read/create/update/delete`; `partners.read/create/update/delete`; `reports.read`, `reports.export`. |
+| `ADMIN` | All 46 catalog keys. |
+| `OFFICER` | `orders.create`, `orders.read`, `orders.update`, `orders.cancel`, `orders.update_after_approval`; `deliveries.read`, `deliveries.update`, `deliveries.approve`; `townships.read/create/update/delete`; `partners.read/create/update/delete`; `rider-handovers.read/create/update`; `reports.read`, `reports.export`. |
 | `RIDER` | `deliveries.read`, `deliveries.update`. |
 | `SHOP` | `shop-portal.read`, `shop-reports.export`. |
 

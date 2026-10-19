@@ -11,5 +11,7 @@ export * from '../../delivery-partners/delivery-partner.schema.js';
 export * from '../../orders/order.schema.js';
 export * from '../../orders/order-status-history.schema.js';
 export * from '../../orders/order-field-audit.schema.js';
+export * from '../../rider-handovers/rider-handover.schema.js';
+export * from '../../rider-handovers/rider-handover-audit.schema.js';
 export * from './app-settings.schema.js';
 export * from './relations.js';

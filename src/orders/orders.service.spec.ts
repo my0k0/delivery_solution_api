@@ -627,7 +627,54 @@ describe('OrdersService', () => {
 
     const result = await service.update(current.id, { partnerId }, 'actor-1');
 
-    expect(result).toMatchObject({ assigneeType: 'PARTNER', partnerId, commissionFee: '0' });
+    expect(result).toMatchObject({ assigneeType: 'PARTNER', partnerId, commissionFee: '0.00' });
+  });
+
+  /**
+   * The other half of the assignee-type rule: a partner fee is the partner's
+   * cost, so an order reassigned to a rider must not keep it. `POST /assign`
+   * does not touch money fields and the edit form cannot clear a field it
+   * disables, so `update` is the only thing that can.
+   */
+  it('clears the partner fee and tracking number when an order is reassigned to a rider', async () => {
+    const riderId = '77777777-7777-4777-8777-777777777777';
+    const current = baseOrder({
+      assigneeType: 'PARTNER',
+      riderId: null,
+      partnerId: '66666666-6666-4666-8666-666666666666',
+      partnerFee: '500.00',
+      partnerTrackingNo: 'PT-4417',
+      commissionFee: '0.00',
+      status: 'ASSIGNED',
+    });
+    prepareUpdateTransaction(current);
+    queryRiders.findFirst.mockResolvedValue({ id: riderId });
+
+    const result = await service.update(current.id, { riderId }, 'actor-1');
+
+    expect(result).toMatchObject({
+      assigneeType: 'RIDER',
+      riderId,
+      partnerFee: '0.00',
+      partnerTrackingNo: null,
+    });
+  });
+
+  it('keeps a partner fee while the assignee stays a partner', async () => {
+    const partnerId = '77777777-7777-4777-8777-777777777777';
+    const current = baseOrder({
+      assigneeType: 'PARTNER',
+      riderId: null,
+      partnerId,
+      partnerFee: '500.00',
+      status: 'ASSIGNED',
+    });
+    prepareUpdateTransaction(current);
+    queryDeliveryPartners.findFirst.mockResolvedValue({ id: partnerId, isActive: true });
+
+    const result = await service.update(current.id, { partnerFee: '750.00' }, 'actor-1');
+
+    expect(result).toMatchObject({ assigneeType: 'PARTNER', partnerFee: '750.00' });
   });
 
   it('returns an order to PENDING when its assignee is explicitly cleared', async () => {

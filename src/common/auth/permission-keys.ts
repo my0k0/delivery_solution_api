@@ -30,6 +30,7 @@ export const MODULE_ACTIONS = {
   'shop-portal': ['read'],
   'shop-reports': ['export'],
   reports: ['read', 'export'],
+  'rider-handovers': ['create', 'read', 'update'],
 } as const satisfies Record<string, readonly string[]>;
 
 export type ModuleName = keyof typeof MODULE_ACTIONS;

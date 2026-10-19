@@ -1,6 +1,6 @@
 # Delivery Workflow v2 — Approved Requirement Change
 
-**Status:** IMPLEMENTED (phases A–E complete; Phase F documentation updated). **Revised 2026-10-18:** the per-**way** commission model was replaced by per-**order** rider commission (§5); the township default-assignee feature was **removed** (§2.9); the catalog is now **13 modules / 43 keys** (§6); and the shop advance (Phase 1) is **built** while the reclaim (Phase 2) is not (§1).
+**Status:** IMPLEMENTED (phases A–E complete; Phase F documentation updated). **Revised 2026-10-18:** the per-**way** commission model was replaced by per-**order** rider commission (§5); the township default-assignee feature was **removed** (§2.9); the catalog became **13 modules / 43 keys** (§6); and the shop advance (Phase 1) is **built** while the reclaim (Phase 2) is not (§1). **Revised 2026-10-20:** rider cash handovers were added — a new `rider-handovers` module (`create`/`read`/`update`, no delete) takes the catalog to **14 modules / 46 keys** (§6), with five endpoints recorded under *As built*.
 
 Repos: `delivery_solution_api` (NestJS 12, Drizzle, Postgres 18) and `delivery_solution_frontend` (Vite + React + TS). Follow each repo's `CLAUDE.md`: no `any`, no abbreviations, ESM `.js` import suffixes, kebab-case typed file names, DTOs for all request/response shapes with `@Api*Response({ type })`, one responsibility per dialog/form file on the frontend, `pnpm codegen` for frontend API types (API must be running), **no new test files in the frontend**.
 
@@ -70,7 +70,7 @@ Decimal strings / SQL `numeric`, never JS floats. P = `packagePrice`, F = `deliv
 - COD to collect = (package paid ? 0 : P) + (fee paid ? 0 : F)
 - Net owed to shop = (package paid ? 0 : P) − (fee paid ? F : 0). Positive = company owes shop; negative = shop owes company.
 - Company fee income = F. Margin = F − partnerFee − rider commission.
-- Money counts as received only after approval (`DELIVERED`).
+- COD is an **expected** amount, never a receipt. Approval (`DELIVERED`) confirms the delivery and is what makes an order's COD count as expected back from the rider — and its fee income and rider commission real. A **rider handover** (added 2026-10-20, see *As built*) is the record of the cash that actually came back: the office records what a rider handed over, and that rider's balance is `DELIVERED` COD minus what has been accepted. The system still holds no record of cash changing hands anywhere else — not from a customer to a shop, and not from the company to a shop.
 - Estimated date = order date (or `availableFrom`) + township `leadTimeDays`; overridable and audited; derived "Delayed" badge.
 - Editing any field requires `orders.update`. An order that has **ended** (`DELIVERED`, `CANCELLED`) cannot be edited at all: `PATCH /orders/:id` answers 409, so there are no post-approval money edits. The shop advance is a settlement rather than an edit, and changing one on a `DELIVERED` order still requires `orders.update_after_approval` **and** a reason (§1). (`orders.update_costs` was **removed 2026-10-18**; money editing had folded into `orders.update`.)
 
@@ -86,15 +86,16 @@ Decimal strings / SQL `numeric`, never JS floats. P = `packagePrice`, F = `deliv
 
 ## 6. Permissions (catalog grows beyond 68; update `MODULE_ACTIONS`, seed, docs, frontend `src/types/permission.ts`)
 
-New/changed keys: `deliveries.approve`, `orders.cancel`, `orders.update_after_approval`, `shop-portal.read`, `shop-reports.export`; add modules `townships`, `partners`; remove `pickups.*`. Riders must still not receive `orders.read`. The SHOP role gets only `shop-portal.read` and `shop-reports.export`. Update OFFICER/RIDER/SHOP seed mappings. (`orders.update_costs`, `ways.override_commission`, and the whole `ways` module were **removed 2026-10-18**.)
+New/changed keys: `deliveries.approve`, `orders.cancel`, `orders.update_after_approval`, `shop-portal.read`, `shop-reports.export`; add modules `townships`, `partners`; remove `pickups.*`. Riders must still not receive `orders.read`. The SHOP role gets only `shop-portal.read` and `shop-reports.export`. Update OFFICER/RIDER/SHOP seed mappings. (`orders.update_costs`, `ways.override_commission`, and the whole `ways` module were **removed 2026-10-18**.) The `rider-handovers` module (`create`/`read`/`update`, deliberately **no delete**) was added **2026-10-20** with cash handovers.
 
-As built, the catalog is **13 modules / 43 keys** — the 42 below plus `orders.shop_settlement` (added 2026-10-18 with the shop advance, §1). The `returns`, `payments`, and `notifications` modules were removed entirely, then every key with no endpoint behind it (`*.import`, the per-module `*.export`, and the route-less `orders.delete` / `deliveries.create` / `deliveries.delete`), and finally the `ways` module together with `orders.update_costs` when the per-way commission model was replaced by per-order commission — so the catalog no longer reserves keys for unimplemented areas.
+As built (2026-10-20), the catalog is **14 modules / 46 keys** — the 43 of 2026-10-18 plus the three `rider-handovers` keys. The 43 were the 42 below plus `orders.shop_settlement` (added 2026-10-18 with the shop advance, §1). The `returns`, `payments`, and `notifications` modules were removed entirely, then every key with no endpoint behind it (`*.import`, the per-module `*.export`, and the route-less `orders.delete` / `deliveries.create` / `deliveries.delete`), and finally the `ways` module together with `orders.update_costs` when the per-way commission model was replaced by per-order commission — so the catalog no longer reserves keys for unimplemented areas.
 
 ## 7. APIs
 
 - Office: `POST /orders` (`riderId`/`partnerId` set = assigned; omitted or `null` = `PENDING` — a township never supplies an assignee), `PATCH /orders/:id` (audited edit **while the order is open** — 409 once it has ended; changing township asks the client to confirm before overwriting the fee and commission defaults — the assignee is never touched), `POST|DELETE /orders/:id/shop-advance` (`orders.shop_settlement`; records/clears the advance to the shop, plus `orders.update_after_approval` and a reason on a `DELIVERED` order), `POST /orders/:id/cancel`, `/orders/:id/assign`, `/orders/:id/postpone`, `/orders/:id/approve`, `/orders/:id/send-back`, `/orders/:id/mark-delivered` (partner), `GET /orders/:id/audit`, townships/partners CRUD.
 - **The office order reads resolve names, never ids.** `GET /orders/:id` also returns `shopName` / `customerName` / `townshipName` / `assigneeName`; each history row carries `changedByName` beside `changedBy`; and `GET /orders/:id/audit` resolves the identifier-valued fields (`shopId`, `customerId`, `townshipId`, `riderId`, `partnerId`) to the referenced record's name, or `Unknown` once that record is gone. An OFFICER holds `orders.read` without `shops.read` / `customers.read` / `riders.read`, so a client-side lookup would leave them reading raw ids. The list endpoint stays id-only, and `OrderResponseDto` is unchanged.
 - Rider: board of own assigned orders (computed COD, 0 for fully prepaid), `POST /riders/me/orders/:id/delivered`. No fee/margin/partner/shop finance fields.
+- Rider handovers: `POST /rider-handovers` (rider, amount, received method `KPAY`/`CASH`/`BANK_TRANSFER`, required `receivedOn` — a calendar date, never in the future — and an optional note), `PATCH /rider-handovers/:id` (correction in place with a **required reason**; there is no delete endpoint), `GET /rider-handovers` (history; filters rider / method / received-date; paginated), `GET /rider-handovers/:id/audit` (per-field trail, a plain array), `GET /rider-handovers/balances` (one row per rider: `deliveredCod`, `accepted`, `balance`, `oldestUnsettledDeliveredOn`, `lastReceivedOn`; `outstandingOnly` filters `balance <> 0`). Gated by `rider-handovers.create|read|update`.
 - Shop: `GET /shop/orders`, `GET /shop/orders/:id`, `GET /shop/dashboard`, `GET /shop/statement` (+CSV/XLSX export). **Dedicated `ShopOrderResponseDto`**: no rider, partner, cost, internal-note or audit fields; shop-relevant history only; `AWAITING_APPROVAL` is mapped to "Out for delivery" in the DTO builder. Never hide fields conditionally on a shared DTO.
 - Reports (read-only, derived): shop statement, order report (filters: date, shop, township, status, assignee; totals row; CSV), rider collection (per rider per day, expected COD to hand back), rider payout (per rider: delivered-order count, earned vs pending commission), office dashboard, shop dashboard, rider dashboard.
 
@@ -127,10 +128,26 @@ The following paths are under `/api/v1`.
 - **Reference data:** township CRUD at `/townships`; delivery-partner CRUD at `/delivery-partners` (permission namespace `partners`).
 - **Commission:** there is no commission endpoint. `orders.commissionFee` is read from the order and edited through `PATCH /orders/:id` while the order is open; once it is `DELIVERED` it cannot be edited.
 - **Rider:** `GET /riders/me/orders`; `POST /riders/me/orders/:id/delivered`; `GET /riders/me/dashboard`.
+- **Rider handovers:** `GET/POST /rider-handovers`; `PATCH /rider-handovers/:id`; `GET /rider-handovers/:id/audit`; `GET /rider-handovers/balances`.
 - **Reports:** `GET /reports/orders` and `/reports/orders/export`; `/reports/shop-statement` and `/reports/shop-statement/export`; `/reports/rider-collection` and `/reports/rider-collection/export`; `/reports/rider-payout` and `/reports/rider-payout/export`; `GET /reports/office-dashboard`.
 - **Shop portal:** `GET /shop/orders`; `GET /shop/orders/export`; `GET /shop/orders/:id`; `GET /shop/dashboard`; `GET /shop/statement`; `GET /shop/statement/export`.
 
 Exports accept CSV or XLSX and use the shared spreadsheet formula-injection guard. The API contract and DTO shapes are generated from the running API's OpenAPI document.
+
+### Rider handovers and the balance (added 2026-10-20)
+
+Cash a rider hands back is recorded in `rider_handovers`: rider, amount, received method, required received date, optional note, and the officer who recorded it. The amount is what the rider handed over and is **never** reduced by commission, which is paid with salary and sits outside this system.
+
+A rider's balance is the all-time COD of their **`DELIVERED`** orders minus everything accepted, computed in Postgres `numeric` and returned as a decimal string. Two choices are deliberate:
+
+1. **`DELIVERED` only.** An order awaiting approval counts toward neither side. Cash is accepted only for deliveries the office has already approved, so counting an unapproved order would keep every balance permanently positive and make a correct rider look short.
+2. **All-time, not date-ranged.** A report range ending settles nothing, which is why the balance sits beside `/reports/rider-collection` rather than inside it.
+
+A negative balance is legitimate and stays visible — cash can arrive before the related order is approved — and `outstandingOnly` filters `balance <> 0`, so neither direction drops off the list.
+
+Cash settles **oldest deliveries first**: `oldestUnsettledDeliveredOn` is the delivery date of the oldest delivery still carrying part of the balance, and `null` when nothing is unsettled. That is a settlement convention, not a claim about which notes changed hands, and no screen may present the balance as reconciled.
+
+A recorded handover is **corrected in place** with a required reason and never deleted: each changed field goes to `rider_handover_audit` with its old value, new value, actor, reason and timestamp, and a duplicate or reversed transfer is corrected down to `0.00` so the history survives. There is no opening balance and no cutover — every figure is the sum of rows in `rider_handovers`. Riders neither see nor submit handovers. Phase 6 (ledger, reconciliation, prepayments) remains blocked.
 
 ### Shop display and attention behavior
 

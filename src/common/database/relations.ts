@@ -5,6 +5,8 @@ import { orderFieldAudit } from '../../orders/order-field-audit.schema.js';
 import { orderStatusHistory } from '../../orders/order-status-history.schema.js';
 import { orders } from '../../orders/order.schema.js';
 import { permissions } from '../../permissions/permissions.schema.js';
+import { riderHandoverAudit } from '../../rider-handovers/rider-handover-audit.schema.js';
+import { riderHandovers } from '../../rider-handovers/rider-handover.schema.js';
 import { riders } from '../../riders/rider.schema.js';
 import { role_permissions } from '../../roles/role-permissions.schema.js';
 import { roles } from '../../roles/roles.schema.js';
@@ -23,6 +25,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   }),
   orderStatusHistories: many(orderStatusHistory),
   orderFieldAudits: many(orderFieldAudit),
+  recordedHandovers: many(riderHandovers),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -61,6 +64,7 @@ export const ridersRelations = relations(riders, ({ one, many }) => ({
   user: one(users, { fields: [riders.userId], references: [users.id] }),
   orders: many(orders),
   defaultTownships: many(townships),
+  handovers: many(riderHandovers),
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
@@ -118,5 +122,34 @@ export const deliveryPartnersRelations = relations(
   deliveryPartners,
   ({ many }) => ({
     orders: many(orders),
+  }),
+);
+
+export const riderHandoversRelations = relations(
+  riderHandovers,
+  ({ one, many }) => ({
+    rider: one(riders, {
+      fields: [riderHandovers.riderId],
+      references: [riders.id],
+    }),
+    recordedBy: one(users, {
+      fields: [riderHandovers.recordedBy],
+      references: [users.id],
+    }),
+    audit: many(riderHandoverAudit),
+  }),
+);
+
+export const riderHandoverAuditRelations = relations(
+  riderHandoverAudit,
+  ({ one }) => ({
+    handover: one(riderHandovers, {
+      fields: [riderHandoverAudit.handoverId],
+      references: [riderHandovers.id],
+    }),
+    actor: one(users, {
+      fields: [riderHandoverAudit.actorId],
+      references: [users.id],
+    }),
   }),
 );

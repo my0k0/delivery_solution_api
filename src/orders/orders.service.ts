@@ -451,18 +451,22 @@ export class OrdersService {
             assigneeType: assignee.type,
             riderId: assignee.riderId,
             partnerId: assignee.partnerId,
-            partnerTrackingNo: input.partnerTrackingNo ?? null,
+            partnerTrackingNo: assignee.type === 'PARTNER' ? input.partnerTrackingNo ?? null : null,
             packageInfo: input.packageInfo ?? null,
             packagePrice: input.packagePrice ?? '0',
             deliveryFee: input.deliveryFee ?? township?.defaultDeliveryFee ?? '0',
             isPackagePaidToShop: input.isPackagePaidToShop ?? false,
             isFeePaidToShop: input.isFeePaidToShop ?? false,
-            partnerFee: input.partnerFee ?? '0',
             /**
-             * Commission is a rider earning. Partner orders are covered by
-             * `partnerFee` instead, so they never carry one — the invariant the
-             * deleted `orders_partner_way_consistency_check` used to hold.
+             * The effective assignee type owns both cost fields. Commission is a
+             * rider earning, so a partner order never carries one — `partnerFee`
+             * covers it instead. The mirror holds too: a partner fee or tracking
+             * number is a partner's cost and reference, so an order without a
+             * partner stores neither. The reports count `partnerFee` as partner
+             * cost, and the edit form cannot clear the field for a non-partner,
+             * so this is the only place that can.
              */
+            partnerFee: assignee.type === 'PARTNER' ? input.partnerFee ?? '0.00' : '0.00',
             commissionFee: assignee.type === 'PARTNER'
               ? '0'
               : input.commissionFee ?? township?.defaultCommissionFee ?? '0',
@@ -545,11 +549,29 @@ export class OrdersService {
           : existing.partnerId,
       );
     }
-    /** Partner orders never carry a rider commission (see `create`). */
     const effectiveAssigneeType = (candidateFields.assigneeType !== undefined
       ? candidateFields.assigneeType
       : existing.assigneeType) as AssigneeType | null;
-    if (effectiveAssigneeType === 'PARTNER') candidateFields.commissionFee = '0';
+    /**
+     * Partner orders never carry a rider commission (see `create`). The forced
+     * value is the column's own canonical form, `'0.00'`: `'0'` compares
+     * unequal to the stored `'0.00'` and would land in `changes` as a money
+     * change on every partner-order edit, writing an `order_field_audit` row
+     * for a commission that never moved.
+     */
+    if (effectiveAssigneeType === 'PARTNER') candidateFields.commissionFee = '0.00';
+    /**
+     * The mirror of the rule above (see `create`). Forcing it here is what
+     * clears the partner's fee when an order is reassigned to a rider or to
+     * nobody: `POST /orders/:id/assign` does not touch money fields, and an
+     * edit that does not mention `partnerFee` would carry the old value
+     * forward. `'0.00'` is the column's own form, so an order that is already
+     * correct produces no change and no field-audit row.
+     */
+    if (effectiveAssigneeType !== 'PARTNER') {
+      candidateFields.partnerFee = '0.00';
+      candidateFields.partnerTrackingNo = null;
+    }
 
     const changedCandidate = Object.entries(candidateFields).filter(([field, value]) =>
       !sameValue(existing[field as keyof OrderRow], value),

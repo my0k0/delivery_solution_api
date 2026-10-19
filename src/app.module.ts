@@ -17,6 +17,7 @@ import { OrdersModule } from './orders/orders.module.js';
 import { TownshipsModule } from './townships/townships.module.js';
 import { DeliveryPartnersModule } from './delivery-partners/delivery-partners.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { RiderHandoversModule } from './rider-handovers/rider-handovers.module.js';
 import { ShopPortalModule } from './shop-portal/shop-portal.module.js';
 
 @Module({
@@ -41,6 +42,7 @@ import { ShopPortalModule } from './shop-portal/shop-portal.module.js';
     DeliveryPartnersModule,
     ReportsModule,
     ShopPortalModule,
+    RiderHandoversModule,
   ],
   providers: [
     {

@@ -66,7 +66,7 @@ pnpm test:e2e
 
 ## Authentication and permissions
 
-All routes except public routes require a JWT access token from `POST /api/v1/auth/login`. Global guards authenticate the active user and check route permissions. The permission catalog is fixed in `src/common/auth/permission-keys.ts`: **13 modules / 42 keys**. The modules are `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, and `reports`. Keys are seeded; runtime APIs can read the catalog and replace role grants, but cannot create or delete permission keys.
+All routes except public routes require a JWT access token from `POST /api/v1/auth/login`. Global guards authenticate the active user and check route permissions. The permission catalog is fixed in `src/common/auth/permission-keys.ts`: **14 modules / 46 keys**. The modules are `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`, and `rider-handovers`. Keys are seeded; runtime APIs can read the catalog and replace role grants, but cannot create or delete permission keys.
 
 Seeded roles are `OWNER` (system role, all catalog permissions), `ADMIN` (all catalog permissions), `OFFICER` (order operations, delivery approval, township/partner/way operations, and reports), `RIDER` (own delivery read/update), and `SHOP` (shop portal read and shop report export). The exact seed grants are in `scripts/seed.ts`.
 
@@ -74,10 +74,10 @@ Seeded roles are `OWNER` (system role, all catalog permissions), `ADMIN` (all ca
 
 The real order states are `PENDING`, `ASSIGNED`, `AWAITING_APPROVAL`, `DELIVERED`, and `CANCELLED`.
 
-- New orders are assigned from the township default when available, or remain `PENDING`; office staff can assign or reassign a rider or delivery partner.
+- New orders carry an optional explicit rider or delivery partner and otherwise remain `PENDING`; a township never supplies an assignee. Office staff can assign or reassign a rider or delivery partner.
 - Riders can submit an assigned order as delivered. It becomes `AWAITING_APPROVAL`; an officer approves it to `DELIVERED` or sends it back to `ASSIGNED` with a shop-visible reason and optional internal note.
-- An officer can mark a partner order delivered directly. Partner orders do not belong to a way and do not earn rider commission.
-- Officers can postpone an order (clear assignee to `PENDING`) or cancel it from `PENDING` or `ASSIGNED` with a required reason — cancelling covers both a called-off delivery and a package that came back to the shop. Cancelled orders are terminal.
+- An officer can mark a partner order delivered directly. A partner order never carries a rider commission: the API forces `commissionFee` to `0`.
+- Officers can postpone an order (clear assignee to `PENDING`) or cancel it from `PENDING` or `ASSIGNED` with a required reason — cancelling covers both a called-off delivery and a package that came back to the shop. `DELIVERED` and `CANCELLED` are terminal, and a terminal order cannot be edited.
 - Order edits are audited field-by-field and require `orders.update`. An order that has ended (`DELIVERED`, `CANCELLED`) cannot be edited at all, so there are no post-approval money edits; the shop advance on a delivered order still needs `orders.update_after_approval` and a reason.
 
 ### Ways, commission, and order money

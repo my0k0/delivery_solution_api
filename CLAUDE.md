@@ -85,12 +85,12 @@ Demo login emails created by `pnpm db:seed:demo`: `rider1@demo.delivery.local`, 
 - `src/main.ts` / `src/setup-app.ts`: `/api` prefix, URI version `v1`, validation pipe, CORS, Swagger. OpenAPI is generated at `/api/v1/docs-json` and is the canonical frontend contract.
 - `src/app.module.ts` registers global guards in order: `JwtAuthGuard`, then `PermissionsGuard`.
 - Shared code: `src/common/auth/`, `src/common/database/`, `src/common/health/`, `src/common/utils/`, and `src/config/`.
-- Registered feature modules: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners`, `reports`, and `shop-portal`. `delivery-partners` uses the permission module name `partners`.
+- Registered feature modules: `auth`, `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `townships`, `delivery-partners`, `reports`, `shop-portal`, and `rider-handovers`. `delivery-partners` uses the permission module name `partners`.
 - Feature schemas live with their module. Re-export every new table from `src/common/database/schema.ts`; that is the central schema entry used by Drizzle Kit.
 
 ## RBAC
 
-The catalog in `src/common/auth/permission-keys.ts` is fixed and seeded: **13 modules / 43 keys**. Modules: `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`. The catalog has read-only API access; role grant sets are replaceable with `permissions.update`, but keys cannot be created/deleted at runtime. (`orders.shop_settlement` was added 2026-10-18 with the shop advance; the catalog was 42 keys before it.)
+The catalog in `src/common/auth/permission-keys.ts` is fixed and seeded: **14 modules / 46 keys**. Modules: `users`, `roles`, `permissions`, `shops`, `customers`, `riders`, `orders`, `deliveries`, `townships`, `partners`, `shop-portal`, `shop-reports`, `reports`, `rider-handovers`. The catalog has read-only API access; role grant sets are replaceable with `permissions.update`, but keys cannot be created/deleted at runtime. (`orders.shop_settlement` was added 2026-10-18 with the shop advance; the catalog was 42 keys before it.)
 
 Seeded roles and grants from `scripts/seed.ts`:
 
