@@ -31,7 +31,7 @@ Orders have a single terminal `CANCELLED` state, reached from `PENDING` or `ASSI
 
 There is **no payment ledger, no reconciliation model/process, and no shop-prepayment record**. Rider → office cash *is* recorded (`rider_handovers`, 2026-10-20), but as an aggregate receipt with a running balance: it is not reconciled against orders and it is not a ledger. Reports are projections of order flags, statuses, and commission fields—not financial transaction history. Phase 6 remains blocked pending approved domain decisions and an ADR; do not infer ledger semantics from these projections.
 
-There is no **rider remittance** record either. Approving a rider-submitted delivery (`AWAITING_APPROVAL → DELIVERED`) confirms the delivery and is the point at which the order's COD moves from the "awaiting approval" figure into "expected to hand back" in `GET /reports/rider-collection`; it records no cash. Nothing in the schema, DTOs, or endpoints says that a rider handed money over, so no report can show what a rider has actually returned.
+Approval records no cash of its own. Approving a rider-submitted delivery (`AWAITING_APPROVAL → DELIVERED`) confirms the delivery and is the point at which the order's COD moves from the "awaiting approval" figure into "expected to hand back" in `GET /reports/rider-collection`; only after approval is that amount eligible to be settled by a handover. Cash actually received is recorded in `rider_handovers` (see above), per rider and as an aggregate: no endpoint attributes a handover to an order, so no report can say which delivery a given handover settled.
 
 ## Phase 7 — Notifications and Viber — LATER
 
